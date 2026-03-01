@@ -15,7 +15,7 @@ An async FastAPI wrapper around the [Visual Crossing Timeline Weather API](https
 
 ## Project Structure
 
-```
+```text
 app/
 ├── main.py              # FastAPI app, lifespan, exception handler and middleware registration
 ├── config.py            # Pydantic Settings, loaded from .env
@@ -136,7 +136,7 @@ Each `WeatherRequest` is deterministically serialized to JSON (`model_dump(mode=
 
 ### Cache-first flow
 
-```
+```text
 Request → CacheService.get() → hit  → deserialize → return WeatherResponse
                               → miss → Visual Crossing API → CacheService.set() → return WeatherResponse
 ```
