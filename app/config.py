@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     api_key: str
     rate_limit_requests: int = 60
     rate_limit_window: int = 60
-
+    database_url: str = "sqlite+aiosqlite:///./history.db"
 
     model_config = SettingsConfigDict(env_file=".env")
 

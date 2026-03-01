@@ -4,12 +4,14 @@ from app.exceptions import custom_http_exception_handler, custom_validation_exce
 from app.middleware import TimingMiddleware, RequestIDMiddleware
 from app.auth import verify_api_key
 from app.rate_limit import check_rate_limit
+from app.database import init_db
 from fastapi import FastAPI, Depends, Request, Response
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from datetime import datetime, timezone
 from app.weather.routes import router as weather_router
 from app.cache.routes import router as cache_router
+from app.history.routes import router as history_router
 from contextlib import asynccontextmanager
 from httpx import AsyncClient
 from redis.asyncio.client import Redis
@@ -23,14 +25,17 @@ async def lifespan(app: FastAPI):
     setup_logging(settings)
     app.state.http_client = AsyncClient(params={"key": settings.weather_api_key})
     app.state.redis_client = Redis(host=settings.redis_host, port=settings.redis_port, username=settings.redis_username, password=settings.redis_password, decode_responses=True)
+    app.state.db_engine, app.state.db_session_factory = await init_db(settings)
     yield
     await app.state.http_client.aclose()
     await app.state.redis_client.aclose()
+    await app.state.db_engine.dispose()
 
 app = FastAPI(title=settings.app_name, description=settings.app_description, version=settings.app_version, lifespan=lifespan, dependencies=[Depends(verify_api_key), Depends(check_rate_limit)])
 
 app.include_router(weather_router)
 app.include_router(cache_router)
+app.include_router(history_router)
 
 app.add_exception_handler(StarletteHTTPException, custom_http_exception_handler)
 app.add_exception_handler(RequestValidationError, custom_validation_exception_handler)
