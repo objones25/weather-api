@@ -1,5 +1,9 @@
 from app.config import get_settings
+from app.logging import setup_logging
+from app.exceptions import custom_http_exception_handler, custom_validation_exception_handler
 from fastapi import FastAPI
+from fastapi.exceptions import RequestValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from datetime import datetime, timezone
 from app.weather.routes import router as weather_router
 from app.cache.routes import router as cache_router
@@ -11,6 +15,7 @@ settings = get_settings()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    setup_logging(settings)
     app.state.http_client = AsyncClient(params={"key": settings.weather_api_key})
     app.state.redis_client = Redis(host=settings.redis_host, port=settings.redis_port, username=settings.redis_username, password=settings.redis_password, decode_responses=True)
     yield
@@ -21,6 +26,9 @@ app = FastAPI(title=settings.app_name, description=settings.app_description, ver
 
 app.include_router(weather_router)
 app.include_router(cache_router)
+
+app.add_exception_handler(StarletteHTTPException, custom_http_exception_handler)
+app.add_exception_handler(RequestValidationError, custom_validation_exception_handler)
 
 @app.get("/")
 async def root():

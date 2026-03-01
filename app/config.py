@@ -1,5 +1,6 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from functools import lru_cache
+from typing import Literal
 
 class Settings(BaseSettings):
     app_name: str = "Weather API"
@@ -12,6 +13,9 @@ class Settings(BaseSettings):
     redis_username: str = "default"
     redis_password: str
     cache_ttl: int = 43200
+    environment: Literal["development", "production"] = "development"
+    log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "DEBUG"
+
 
     model_config = SettingsConfigDict(env_file=".env")
 
