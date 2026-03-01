@@ -1,7 +1,8 @@
 from app.config import get_settings
 from fastapi import FastAPI
 from datetime import datetime, timezone
-from app.weather.routes import router
+from app.weather.routes import router as weather_router
+from app.cache.routes import router as cache_router
 from contextlib import asynccontextmanager
 from httpx import AsyncClient
 from redis.asyncio.client import Redis
@@ -18,7 +19,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title=settings.app_name, description=settings.app_description, version=settings.app_version, lifespan=lifespan)
 
-app.include_router(router)
+app.include_router(weather_router)
+app.include_router(cache_router)
 
 @app.get("/")
 async def root():
