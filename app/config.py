@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     environment: Literal["development", "production"] = "development"
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "DEBUG"
     api_key: str
+    rate_limit_requests: int = 60
+    rate_limit_window: int = 60
 
 
     model_config = SettingsConfigDict(env_file=".env")
