@@ -1,32 +1,61 @@
 import time
 import uuid
 import logging
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.requests import Request
+from starlette.types import ASGIApp, Scope, Receive, Send, Message
+from starlette.datastructures import MutableHeaders
 
 logger = logging.getLogger(__name__)
 
-class TimingMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next):
-        start_time = time.time()
-        response = await call_next(request)
-        process_time_ms = int((time.time() - start_time) * 1000)
-        request_id = getattr(request.state, "request_id", None)
+
+class TimingMiddleware:
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        start = time.perf_counter()
+        status_code = 500
+
+        async def send_wrapper(message: Message) -> None:
+            nonlocal status_code
+            if message["type"] == "http.response.start":
+                status_code = message["status"]
+                elapsed_ms = int((time.perf_counter() - start) * 1000)
+                MutableHeaders(scope=message).append("X-Process-Time", str(elapsed_ms))
+            await send(message)
+
+        await self.app(scope, receive, send_wrapper)
+
+        total_ms = int((time.perf_counter() - start) * 1000)
+        request_id = scope.get("state", {}).get("request_id")
         logger.info(
             "%s %s %d %dms request_id=%s",
-            request.method,
-            request.url.path,
-            response.status_code,
-            process_time_ms,
+            scope.get("method", ""),
+            scope.get("path", ""),
+            status_code,
+            total_ms,
             request_id,
         )
-        response.headers["X-Process-Time"] = str(process_time_ms)
-        return response
 
-class RequestIDMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next):
+
+class RequestIDMiddleware:
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
         request_id = str(uuid.uuid4())
-        request.state.request_id = request_id
-        response = await call_next(request)
-        response.headers["X-Request-ID"] = request_id
-        return response
+        scope.setdefault("state", {})["request_id"] = request_id
+
+        async def send_wrapper(message: Message) -> None:
+            if message["type"] == "http.response.start":
+                MutableHeaders(scope=message).append("X-Request-ID", request_id)
+            await send(message)
+
+        await self.app(scope, receive, send_wrapper)

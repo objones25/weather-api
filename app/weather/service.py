@@ -4,6 +4,7 @@ from httpx import AsyncClient, HTTPStatusError, RequestError
 from fastapi import Depends, HTTPException, Request
 from app.cache.service import CacheService, get_cache_service
 import logging
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -37,19 +38,42 @@ class WeatherService:
         return params
     
     async def get_weather(self, request: WeatherRequest) -> WeatherResponse:
+        t0 = time.perf_counter()
         cached = await self.cache_service.get(request)
+        t1 = time.perf_counter()
+
         if cached:
-            logger.debug("Cache hit for %s", request.location)
-            return WeatherResponse.model_validate_json(cached)
-        logger.debug("Cache miss for %s — fetching from API", request.location)
+            result = WeatherResponse.model_validate_json(cached)
+            t2 = time.perf_counter()
+            logger.debug(
+                "Cache hit for %s [redis=%dms parse=%dms total=%dms]",
+                request.location,
+                int((t1 - t0) * 1000),
+                int((t2 - t1) * 1000),
+                int((t2 - t0) * 1000),
+            )
+            return result
+
+        logger.debug("Cache miss for %s [redis=%dms] — fetching from API", request.location, int((t1 - t0) * 1000))
         url = self._build_url(request)
         params = self._build_params(request)
         try:
+            t2 = time.perf_counter()
             response = await self.client.get(url, params=params)
             response.raise_for_status()
+            t3 = time.perf_counter()
             weather_response = WeatherResponse.model_validate(response.json())
+            t4 = time.perf_counter()
             await self.cache_service.set(request, weather_response)
-            logger.info("Fetched and cached weather for %s", request.location)
+            t5 = time.perf_counter()
+            logger.info(
+                "Fetched and cached weather for %s [api=%dms parse=%dms cache_set=%dms total=%dms]",
+                request.location,
+                int((t3 - t2) * 1000),
+                int((t4 - t3) * 1000),
+                int((t5 - t4) * 1000),
+                int((t5 - t0) * 1000),
+            )
             return weather_response
         except HTTPStatusError as e:
             logger.error("Upstream API error for %s: %d %s", request.location, e.response.status_code, e.response.text)
