@@ -1,6 +1,7 @@
 from app.config import get_settings
 from app.logging import setup_logging
 from app.exceptions import custom_http_exception_handler, custom_validation_exception_handler
+from app.middleware import TimingMiddleware, RequestIDMiddleware
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -29,6 +30,11 @@ app.include_router(cache_router)
 
 app.add_exception_handler(StarletteHTTPException, custom_http_exception_handler)
 app.add_exception_handler(RequestValidationError, custom_validation_exception_handler)
+
+# RequestIDMiddleware registered last so it runs first (LIFO), ensuring
+# request.state.request_id is set before TimingMiddleware needs it
+app.add_middleware(TimingMiddleware)
+app.add_middleware(RequestIDMiddleware)
 
 @app.get("/")
 async def root():
