@@ -15,7 +15,7 @@ def setup_logging(settings: Settings) -> None:
                 "datefmt": "%Y-%m-%d %H:%M:%S",
             },
             "json": {
-                "()": "pythonjsonlogger.jsonlogger.JsonFormatter",
+                "()": "pythonjsonlogger.json.JsonFormatter",
                 "format": "%(asctime)s %(levelname)s %(name)s %(lineno)d %(message)s",
             },
         },

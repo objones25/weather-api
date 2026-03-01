@@ -9,19 +9,33 @@ An async FastAPI wrapper around the [Visual Crossing Timeline Weather API](https
 - Full Pydantic v2 validation on requests and responses
 - Async throughout — `httpx.AsyncClient` for HTTP, `redis.asyncio` for cache
 - Managed client lifecycles via FastAPI lifespan
+- API key authentication via `X-API-Key` header
+- Centralised logging — plain-text in development, JSON in production
+- Request timing and request ID middleware (`X-Process-Time`, `X-Request-ID` headers)
 
 ## Project Structure
 
 ```
 app/
-├── main.py              # FastAPI app, lifespan (http + redis clients), root/health endpoints
+├── main.py              # FastAPI app, lifespan, exception handler and middleware registration
 ├── config.py            # Pydantic Settings, loaded from .env
+├── auth.py              # API key authentication dependency
+├── logging.py           # setup_logging() — dictConfig, dev/prod formatters
+├── exceptions.py        # Custom HTTP and validation exception handlers
+├── middleware.py        # TimingMiddleware, RequestIDMiddleware
 ├── cache/
-│   └── service.py       # CacheService — Redis get/set/delete with MD5 request key hashing
+│   ├── service.py       # CacheService — Redis get/set/delete with MD5 request key hashing
+│   └── routes.py        # /v1/cache GET/POST/DELETE endpoints
 └── weather/
     ├── schema.py        # WeatherRequest (with enums + validation) and WeatherResponse models
     ├── service.py       # WeatherService — cache-first fetch, URL/param building
     └── routes.py        # /v1/weather endpoint
+tests/
+├── conftest.py          # Shared fixtures — TestClient, mock services
+├── test_main.py         # Root and health endpoint tests
+├── test_auth.py         # Auth tests — missing/invalid/valid key
+├── test_weather.py      # Weather endpoint tests
+└── test_cache.py        # Cache endpoint tests
 ```
 
 ## Setup
@@ -46,13 +60,16 @@ Create a `.env` file in the project root:
 ```env
 WEATHER_API_KEY=your_visual_crossing_api_key
 REDIS_PASSWORD=your_redis_password
+API_KEY=your_api_key
 
 # Optional overrides (defaults shown)
 WEATHER_API_URL=https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline
 REDIS_HOST=your_redis_host
 REDIS_PORT=6379
 REDIS_USERNAME=default
-CACHE_TTL=3600
+CACHE_TTL=43200
+ENVIRONMENT=development
+LOG_LEVEL=DEBUG
 ```
 
 ### Run
@@ -63,13 +80,24 @@ fastapi dev app/main.py
 
 API docs available at [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
 
+### Run tests
+
+```bash
+uv run pytest tests/ -v
+```
+
 ## Endpoints
+
+All endpoints require an `X-API-Key` header.
 
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/` | App name, description, version |
 | `GET` | `/health` | Status, version, UTC timestamp |
 | `GET` | `/v1/weather` | Fetch weather data |
+| `GET` | `/v1/cache` | Retrieve a cached response |
+| `POST` | `/v1/cache` | Store a response in cache |
+| `DELETE` | `/v1/cache` | Delete a cached response |
 
 ### Weather endpoint parameters
 
@@ -87,13 +115,13 @@ API docs available at [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
 
 ```bash
 # 15-day forecast for London
-curl "http://localhost:8000/v1/weather?location=London,UK"
+curl -H "X-API-Key: your_key" "http://localhost:8000/v1/weather?location=London,UK"
 
 # Temperature only for a date range
-curl "http://localhost:8000/v1/weather?location=New+York&date1=2026-01-01&date2=2026-01-07&elements=datetime,tempmax,tempmin,temp"
+curl -H "X-API-Key: your_key" "http://localhost:8000/v1/weather?location=New+York&date1=2026-01-01&date2=2026-01-07&elements=datetime,tempmax,tempmin,temp"
 
 # Current conditions only
-curl "http://localhost:8000/v1/weather?location=Tokyo&include=current"
+curl -H "X-API-Key: your_key" "http://localhost:8000/v1/weather?location=Tokyo&include=current"
 ```
 
 ## Architecture Notes
@@ -112,3 +140,7 @@ Each `WeatherRequest` is deterministically serialized to JSON (`model_dump(mode=
 Request → CacheService.get() → hit  → deserialize → return WeatherResponse
                               → miss → Visual Crossing API → CacheService.set() → return WeatherResponse
 ```
+
+### Middleware execution order
+
+Middleware is registered LIFO — `RequestIDMiddleware` runs first (sets `request.state.request_id`), then `TimingMiddleware` (reads the ID for its log line).
