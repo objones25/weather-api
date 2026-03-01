@@ -10,13 +10,18 @@ async def check_rate_limit(request: Request, response: Response,key: str = Secur
     now = time.time()
     window_start = now - settings.rate_limit_window
     redis_key = f"rate_limit:{key}"
-    await redis.zremrangebyscore(redis_key, "-inf", window_start)
-    count = await redis.zcard(redis_key)
-    oldest = await redis.zrange(redis_key, 0, 0, withscores=True)
+    # Pipeline 1: evict expired entries, count remaining, fetch oldest for reset time
+    async with redis.pipeline(transaction=False) as pipe:
+        pipe.zremrangebyscore(redis_key, "-inf", window_start)
+        pipe.zcard(redis_key)
+        pipe.zrange(redis_key, 0, 0, withscores=True)
+        _, count, oldest = await pipe.execute()
+
     reset_time = (oldest[0][1] + settings.rate_limit_window) if oldest else (now + settings.rate_limit_window)
-    response.headers["X-RateLimit-Remaining"] = str(max(settings.rate_limit_requests - count,0))
+    response.headers["X-RateLimit-Limit"] = str(settings.rate_limit_requests)
+    response.headers["X-RateLimit-Remaining"] = str(max(settings.rate_limit_requests - count, 0))
     response.headers["X-RateLimit-Reset"] = str(int(reset_time))
-    response.headers["X-RateLimit-Limit"] = str(settings.rate_limit_requests) 
+
     if count >= settings.rate_limit_requests:
         raise HTTPException(
             status_code=429,
@@ -28,5 +33,9 @@ async def check_rate_limit(request: Request, response: Response,key: str = Secur
                 "X-RateLimit-Reset": str(int(reset_time)),
             },
         )
-    await redis.zadd(redis_key, {str(uuid4()): now})
-    await redis.expire(redis_key, settings.rate_limit_window)
+
+    # Pipeline 2: record this request and refresh TTL
+    async with redis.pipeline(transaction=False) as pipe:
+        pipe.zadd(redis_key, {str(uuid4()): now})
+        pipe.expire(redis_key, settings.rate_limit_window)
+        await pipe.execute()

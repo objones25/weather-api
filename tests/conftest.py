@@ -3,9 +3,19 @@ from starlette.testclient import TestClient
 from app.main import app
 from app.auth import verify_api_key
 from app.rate_limit import check_rate_limit
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 from app.cache.service import get_cache_service
 from app.weather.service import get_weather_service
+
+
+def make_pipeline_ctx(execute_results):
+    """Async context manager mock that returns a pipeline yielding execute_results."""
+    pipe = MagicMock()
+    pipe.execute = AsyncMock(return_value=execute_results)
+    ctx = MagicMock()
+    ctx.__aenter__ = AsyncMock(return_value=pipe)
+    ctx.__aexit__ = AsyncMock(return_value=False)
+    return ctx
 
 @fixture
 def client():
