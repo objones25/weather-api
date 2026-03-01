@@ -4,7 +4,7 @@ from app.exceptions import custom_http_exception_handler, custom_validation_exce
 from app.middleware import TimingMiddleware, RequestIDMiddleware
 from app.auth import verify_api_key
 from app.rate_limit import check_rate_limit
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI, Depends, Request, Response
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from datetime import datetime, timezone
@@ -13,6 +13,8 @@ from app.cache.routes import router as cache_router
 from contextlib import asynccontextmanager
 from httpx import AsyncClient
 from redis.asyncio.client import Redis
+import asyncio
+import time
 
 settings = get_settings()
 
@@ -41,15 +43,37 @@ app.add_middleware(RequestIDMiddleware)
 @app.get("/")
 async def root():
     return {
-        "app_name": settings.app_name, 
-        "app_description": settings.app_description, 
-        "app_version": settings.app_version,
-        }
+        "name": settings.app_name,
+        "description": settings.app_description,
+        "version": settings.app_version,
+    }
+
+async def _check(coro) -> dict:
+    now = time.time()
+    try:
+        await coro
+        return {"status": "ok", "latency_ms": int((time.time() - now) * 1000)}
+    except Exception:
+        return {"status": "unavailable", "latency_ms": int((time.time() - now) * 1000)}
+
 
 @app.get("/health")
-async def health():
+async def health(request: Request, response: Response):
+    redis_result, weather_result = await asyncio.gather(
+        _check(request.app.state.redis_client.ping()),
+        _check(request.app.state.http_client.head(settings.weather_api_url)),
+    )
+
+    if weather_result["status"] == "unavailable":
+        overall, response.status_code = "unavailable", 503
+    elif redis_result["status"] == "unavailable":
+        overall = "degraded"
+    else:
+        overall = "ok"
+
     return {
-        "status": "ok",
-        "app_version": settings.app_version,
+        "status": overall,
+        "version": settings.app_version,
         "timestamp": datetime.now(timezone.utc),
-        }
+        "checks": {"redis": redis_result, "weather_api": weather_result},
+    }

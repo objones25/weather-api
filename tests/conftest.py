@@ -42,3 +42,16 @@ def rate_limit_client():
         app.state.redis_client = mock_redis  # override after lifespan runs
         yield c, mock_redis
     app.dependency_overrides.clear()
+
+
+@fixture
+def health_client():
+    mock_redis = AsyncMock()
+    mock_http_client = AsyncMock()
+    app.dependency_overrides[verify_api_key] = lambda: None
+    app.dependency_overrides[check_rate_limit] = lambda: None
+    with TestClient(app, headers={"X-API-Key": "test-key"}) as c:
+        app.state.redis_client = mock_redis
+        app.state.http_client = mock_http_client
+        yield c, mock_redis, mock_http_client
+    app.dependency_overrides.clear()
