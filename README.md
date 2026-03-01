@@ -86,30 +86,40 @@ API docs available at [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
 uv run pytest tests/ -v
 ```
 
+### Run with Docker
+
+Requires Docker and Docker Compose. Set `WEATHER_API_KEY` and `API_KEY` in `.env` — Redis is provided by the compose stack so no external instance is needed.
+
+```bash
+docker compose up --build
+```
+
+API docs available at [http://localhost:8000/docs](http://localhost:8000/docs)
+
 ## Endpoints
 
 All endpoints require an `X-API-Key` header.
 
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/` | App name, description, version |
-| `GET` | `/health` | Status, version, UTC timestamp |
-| `GET` | `/v1/weather` | Fetch weather data |
-| `GET` | `/v1/cache` | Retrieve a cached response |
-| `POST` | `/v1/cache` | Store a response in cache |
-| `DELETE` | `/v1/cache` | Delete a cached response |
+| Method   | Path          | Description                    |
+| -------- | ------------- | ------------------------------ |
+| `GET`    | `/`           | App name, description, version |
+| `GET`    | `/health`     | Status, version, UTC timestamp |
+| `GET`    | `/v1/weather` | Fetch weather data             |
+| `GET`    | `/v1/cache`   | Retrieve a cached response     |
+| `POST`   | `/v1/cache`   | Store a response in cache      |
+| `DELETE` | `/v1/cache`   | Delete a cached response       |
 
 ### Weather endpoint parameters
 
-| Parameter | Type | Required | Default | Description |
-|-----------|------|----------|---------|-------------|
-| `location` | string | Yes | — | Address, lat/lon, ZIP, or city name |
-| `date1` | string | No | — | Start date (`yyyy-MM-dd`), UNIX timestamp, or keyword (`today`, `last30days`) |
-| `date2` | string | No | — | End date — requires `date1` |
-| `unit_group` | enum | No | `us` | Unit system: `us`, `uk`, `metric`, `base` |
-| `include` | list | No | — | Sections to include: `days`, `hours`, `current`, `alerts`, `obs`, etc. |
-| `elements` | list | No | — | Specific fields to return — supports `add:element` / `remove:element` |
-| `lang` | enum | No | `en` | Response language — 28 languages supported |
+| Parameter    | Type   | Required | Default | Description                                                                   |
+| ------------ | ------ | -------- | ------- | ----------------------------------------------------------------------------- |
+| `location`   | string | Yes      | —       | Address, lat/lon, ZIP, or city name                                           |
+| `date1`      | string | No       | —       | Start date (`yyyy-MM-dd`), UNIX timestamp, or keyword (`today`, `last30days`) |
+| `date2`      | string | No       | —       | End date — requires `date1`                                                   |
+| `unit_group` | enum   | No       | `us`    | Unit system: `us`, `uk`, `metric`, `base`                                     |
+| `include`    | list   | No       | —       | Sections to include: `days`, `hours`, `current`, `alerts`, `obs`, etc.        |
+| `elements`   | list   | No       | —       | Specific fields to return — supports `add:element` / `remove:element`         |
+| `lang`       | enum   | No       | `en`    | Response language — 28 languages supported                                    |
 
 ### Example requests
 

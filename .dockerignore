@@ -1,0 +1,21 @@
+# Version control
+.git
+.gitignore
+
+# Secrets — never bake into image
+.env
+
+# Python artifacts
+__pycache__/
+*.py[oc]
+.venv/
+
+# Dev / tooling
+.python-version
+tests/
+.github/
+
+# Build artifacts
+dist/
+build/
+*.egg-info
