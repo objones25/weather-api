@@ -2,7 +2,8 @@ from app.config import get_settings
 from app.logging import setup_logging
 from app.exceptions import custom_http_exception_handler, custom_validation_exception_handler
 from app.middleware import TimingMiddleware, RequestIDMiddleware
-from fastapi import FastAPI
+from app.auth import verify_api_key
+from fastapi import FastAPI, Depends
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from datetime import datetime, timezone
@@ -23,7 +24,7 @@ async def lifespan(app: FastAPI):
     await app.state.http_client.aclose()
     await app.state.redis_client.aclose()
 
-app = FastAPI(title=settings.app_name, description=settings.app_description, version=settings.app_version, lifespan=lifespan)
+app = FastAPI(title=settings.app_name, description=settings.app_description, version=settings.app_version, lifespan=lifespan, dependencies=[Depends(verify_api_key)])
 
 app.include_router(weather_router)
 app.include_router(cache_router)

@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     cache_ttl: int = 43200
     environment: Literal["development", "production"] = "development"
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "DEBUG"
+    api_key: str
 
 
     model_config = SettingsConfigDict(env_file=".env")
