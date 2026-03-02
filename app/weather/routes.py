@@ -1,7 +1,10 @@
+import logging
 from fastapi import APIRouter, Depends, BackgroundTasks, Request
 from app.weather.service import get_weather_service, WeatherService
 from app.weather.schema import WeatherRequest, WeatherResponse
 from app.history.models import RequestLog
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/v1",
@@ -10,9 +13,12 @@ router = APIRouter(
 
 
 async def _log_request(session_factory, location: str) -> None:
-    async with session_factory() as session:
-        session.add(RequestLog(location=location))
-        await session.commit()
+    try:
+        async with session_factory() as session:
+            session.add(RequestLog(location=location))
+            await session.commit()
+    except Exception:
+        logger.exception("Failed to log request history for location=%s", location)
 
 
 @router.get("/weather", response_model=WeatherResponse)
