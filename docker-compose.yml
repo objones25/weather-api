@@ -12,17 +12,49 @@ services:
       REDIS_USERNAME: default
       REDIS_PASSWORD: ""
       ENVIRONMENT: development
+      # Write the SQLite DB into the named volume so history survives restarts
+      DATABASE_URL: sqlite+aiosqlite:////data/history.db
     depends_on:
       redis:
         condition: service_healthy
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+    volumes:
+      - sqlite_data:/data
+    networks:
+      - backend
 
   redis:
     image: redis:7-alpine
     command: redis-server --save "" --appendonly no
-    ports:
-      - "6379:6379"
+    # No host port mapping — Redis is reachable by name inside the backend
+    # network only. Add `ports: ["6379:6379"]` temporarily if you need
+    # direct host access for debugging.
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 3s
       retries: 5
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+    networks:
+      - backend
+
+networks:
+  backend:
+    driver: bridge
+
+volumes:
+  sqlite_data:

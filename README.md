@@ -123,6 +123,8 @@ docker compose up --build
 
 API docs available at [http://localhost:8000/docs](http://localhost:8000/docs)
 
+Request history is persisted in a named Docker volume (`sqlite_data`) so it survives container restarts. Redis is not exposed to the host — services communicate over an internal `backend` network.
+
 ## Endpoints
 
 All endpoints require an `X-API-Key` header except `/metrics`.
