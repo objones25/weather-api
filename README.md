@@ -10,6 +10,7 @@ An async FastAPI wrapper around the [Visual Crossing Timeline Weather API](https
 - Sliding window rate limiting via Redis sorted sets (`X-RateLimit-*` headers)
 - Full Pydantic v2 validation on requests and responses
 - Async throughout — `httpx.AsyncClient` for HTTP, `redis.asyncio` for cache, `aiosqlite` for history
+- Database migrations managed by Alembic — schema versioned and applied at deployment
 - Managed client lifecycles via FastAPI lifespan
 - API key authentication via `X-API-Key` header
 - Centralised logging — plain-text in development, JSON in production
@@ -25,6 +26,9 @@ app/
 ├── auth.py              # API key authentication dependency
 ├── rate_limit.py        # Sliding window rate limiter dependency
 ├── database.py          # Async SQLite engine init, get_session dependency
+alembic/
+├── env.py               # Async-compatible migration environment
+└── versions/            # Versioned migration scripts
 ├── logging.py           # setup_logging() — dictConfig, dev/prod formatters
 ├── exceptions.py        # Custom HTTP and validation exception handlers
 ├── middleware.py        # TimingMiddleware, RequestIDMiddleware (pure ASGI)
@@ -89,6 +93,8 @@ DATABASE_URL=sqlite+aiosqlite:///./history.db
 ### Run
 
 ```bash
+# Apply migrations, then start the dev server
+alembic upgrade head
 fastapi dev app/main.py
 ```
 
@@ -114,15 +120,15 @@ API docs available at [http://localhost:8000/docs](http://localhost:8000/docs)
 
 All endpoints require an `X-API-Key` header.
 
-| Method   | Path            | Description                         |
-| -------- | --------------- | ----------------------------------- |
-| `GET`    | `/`             | App name, description, version      |
-| `GET`    | `/health`       | Deep health check (Redis + API)     |
-| `GET`    | `/v1/weather`   | Fetch weather data                  |
-| `GET`    | `/v1/cache`     | Retrieve a cached response          |
-| `POST`   | `/v1/cache`     | Store a response in cache           |
-| `DELETE` | `/v1/cache`     | Delete a cached response            |
-| `GET`    | `/v1/history`   | List past weather requests          |
+| Method   | Path          | Description                     |
+| -------- | ------------- | ------------------------------- |
+| `GET`    | `/`           | App name, description, version  |
+| `GET`    | `/health`     | Deep health check (Redis + API) |
+| `GET`    | `/v1/weather` | Fetch weather data              |
+| `GET`    | `/v1/cache`   | Retrieve a cached response      |
+| `POST`   | `/v1/cache`   | Store a response in cache       |
+| `DELETE` | `/v1/cache`   | Delete a cached response        |
+| `GET`    | `/v1/history` | List past weather requests      |
 
 ### Weather endpoint parameters
 
@@ -138,11 +144,11 @@ All endpoints require an `X-API-Key` header.
 
 ### History endpoint parameters
 
-| Parameter  | Type    | Required | Default | Description                              |
-| ---------- | ------- | -------- | ------- | ---------------------------------------- |
-| `location` | string  | No       | —       | Case-insensitive substring filter        |
-| `offset`   | integer | No       | `0`     | Number of records to skip                |
-| `limit`    | integer | No       | `20`    | Records to return — max `100`            |
+| Parameter  | Type    | Required | Default | Description                       |
+| ---------- | ------- | -------- | ------- | --------------------------------- |
+| `location` | string  | No       | —       | Case-insensitive substring filter |
+| `offset`   | integer | No       | `0`     | Number of records to skip         |
+| `limit`    | integer | No       | `20`    | Records to return — max `100`     |
 
 Returns `{ items, total, offset, limit }` where `total` reflects any active filter.
 
@@ -182,6 +188,15 @@ Request → CacheService.get() → hit  → deserialize → return WeatherRespon
                               → miss → Visual Crossing API → CacheService.set() → return WeatherResponse
 ```
 
+### Database migrations
+
+Alembic manages all schema changes. Migration scripts live in `alembic/versions/` and are applied with `alembic upgrade head`. The Dockerfile runs this automatically before starting the server. To create a migration after changing a model:
+
+```bash
+alembic revision --autogenerate -m "describe the change"
+alembic upgrade head
+```
+
 ### Request history
 
 Every successful weather request logs a `RequestLog` row (location + timestamp) as a `BackgroundTask` — after the response is sent, with its own database session, so it adds zero latency to the response.
@@ -189,6 +204,7 @@ Every successful weather request logs a `RequestLog` row (location + timestamp) 
 ### Rate limiting
 
 Sliding window algorithm using a Redis sorted set per API key:
+
 1. Evict entries older than the window (`ZREMRANGEBYSCORE`)
 2. Count remaining entries (`ZCARD`) — reject with 429 if at limit
 3. Record this request (`ZADD`) and refresh TTL (`EXPIRE`)
