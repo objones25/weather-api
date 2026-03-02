@@ -3,6 +3,7 @@ import uuid
 import logging
 from starlette.types import ASGIApp, Scope, Receive, Send, Message
 from starlette.datastructures import MutableHeaders
+from app.metrics import HTTP_REQUESTS_TOTAL, HTTP_REQUEST_DURATION_SECONDS
 
 logger = logging.getLogger(__name__)
 
@@ -29,16 +30,29 @@ class TimingMiddleware:
 
         await self.app(scope, receive, send_wrapper)
 
-        total_ms = int((time.perf_counter() - start) * 1000)
+        duration = time.perf_counter() - start
+        total_ms = int(duration * 1000)
+        path = scope.get("path", "")
         request_id = scope.get("state", {}).get("request_id")
         logger.info(
             "%s %s %d %dms request_id=%s",
             scope.get("method", ""),
-            scope.get("path", ""),
+            path,
             status_code,
             total_ms,
             request_id,
         )
+
+        if path != "/metrics":
+            HTTP_REQUESTS_TOTAL.labels(
+                method=scope.get("method", ""),
+                path=path,
+                status_code=str(status_code),
+            ).inc()
+            HTTP_REQUEST_DURATION_SECONDS.labels(
+                method=scope.get("method", ""),
+                path=path,
+            ).observe(duration)
 
 
 class RequestIDMiddleware:

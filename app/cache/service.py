@@ -2,6 +2,7 @@ from redis.asyncio.client import Redis
 from fastapi import Depends, Request
 from app.config import Settings, get_settings
 from app.weather.schema import WeatherRequest, WeatherResponse
+from app.metrics import CACHE_REQUESTS_TOTAL
 from hashlib import md5
 import json
 import logging
@@ -18,7 +19,9 @@ class CacheService:
 
     async def get(self, request: WeatherRequest) -> str:
         key = self._create_key(request)
-        return await self.client.get(key)
+        result = await self.client.get(key)
+        CACHE_REQUESTS_TOTAL.labels(result="hit" if result is not None else "miss").inc()
+        return result
 
     async def set(self, request: WeatherRequest, response: WeatherResponse) -> None:
         key = self._create_key(request)

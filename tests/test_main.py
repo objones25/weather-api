@@ -11,6 +11,17 @@ def _assert_health_shape(data):
         assert data["checks"][key]["latency_ms"] >= 0
 
 
+def test_metrics_endpoint(client):
+    response = client.get("/metrics")
+    assert response.status_code == 200
+    assert "text/plain" in response.headers["content-type"]
+    # Default Python/process metrics are always present
+    assert "python_info" in response.text
+    # Our custom metric families are registered even before first observation
+    assert "http_request_duration_seconds" in response.text
+    assert "cache_requests_total" in response.text
+
+
 def test_root(client):
     response = client.get("/")
     assert response.status_code == 200

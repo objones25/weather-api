@@ -15,6 +15,7 @@ from app.history.routes import router as history_router
 from contextlib import asynccontextmanager
 from httpx import AsyncClient
 from redis.asyncio.client import Redis
+from prometheus_client import make_asgi_app
 import asyncio
 import time
 
@@ -36,6 +37,10 @@ app = FastAPI(title=settings.app_name, description=settings.app_description, ver
 app.include_router(weather_router)
 app.include_router(cache_router)
 app.include_router(history_router)
+
+# Mounted as a sub-app so FastAPI's global auth/rate-limit dependencies don't apply.
+# Prometheus scrapers don't send API keys, so this endpoint must be unauthenticated.
+app.mount("/metrics", make_asgi_app())
 
 app.add_exception_handler(StarletteHTTPException, custom_http_exception_handler)
 app.add_exception_handler(RequestValidationError, custom_validation_exception_handler)

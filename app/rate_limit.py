@@ -1,5 +1,6 @@
 from fastapi import Depends, HTTPException, Security, Request, Response
 from app.config import get_settings, Settings
+from app.metrics import RATE_LIMIT_REJECTIONS_TOTAL
 from redis.asyncio.client import Redis
 from app.auth import api_key_header
 from uuid import uuid4
@@ -23,6 +24,7 @@ async def check_rate_limit(request: Request, response: Response,key: str = Secur
     response.headers["X-RateLimit-Reset"] = str(int(reset_time))
 
     if count >= settings.rate_limit_requests:
+        RATE_LIMIT_REJECTIONS_TOTAL.inc()
         raise HTTPException(
             status_code=429,
             detail="Rate limit exceeded",
