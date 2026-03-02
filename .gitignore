@@ -13,4 +13,5 @@ wheels/
 .env
 
 # Database files
-*.db.coverage
+*.db
+.coverage
