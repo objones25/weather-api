@@ -8,6 +8,7 @@ An async FastAPI wrapper around the [Visual Crossing Timeline Weather API](https
 - Redis caching with configurable TTL — repeated requests served in ~100ms vs ~400ms from the upstream API
 - Request history stored in SQLite — queryable with location filter and offset pagination
 - Sliding window rate limiting via Redis sorted sets (`X-RateLimit-*` headers)
+- Prometheus metrics exposed at `/metrics` — HTTP request counts, latency histograms, cache hit/miss counters, rate limit rejections
 - Full Pydantic v2 validation on requests and responses
 - Async throughout — `httpx.AsyncClient` for HTTP, `redis.asyncio` for cache, `aiosqlite` for history
 - Database migrations managed by Alembic — schema versioned and applied at deployment
@@ -25,13 +26,14 @@ app/
 ├── config.py            # Pydantic Settings, loaded from .env
 ├── auth.py              # API key authentication dependency
 ├── rate_limit.py        # Sliding window rate limiter dependency
+├── metrics.py           # Prometheus metric definitions (Counter, Histogram)
 ├── database.py          # Async SQLite engine init, get_session dependency
 alembic/
 ├── env.py               # Async-compatible migration environment
 └── versions/            # Versioned migration scripts
 ├── logging.py           # setup_logging() — dictConfig, dev/prod formatters
 ├── exceptions.py        # Custom HTTP and validation exception handlers
-├── middleware.py        # TimingMiddleware, RequestIDMiddleware (pure ASGI)
+├── middleware.py        # TimingMiddleware, RequestIDMiddleware (pure ASGI) — records HTTP metrics
 ├── cache/
 │   ├── service.py       # CacheService — Redis get/set/delete with MD5 request key hashing
 │   └── routes.py        # /v1/cache GET/POST/DELETE endpoints
@@ -44,13 +46,16 @@ alembic/
     ├── service.py       # WeatherService — cache-first fetch, URL/param building
     └── routes.py        # /v1/weather endpoint, logs requests as background task
 tests/
-├── conftest.py          # Shared fixtures — TestClient, mock services, async DB
-├── test_main.py         # Root and health endpoint tests
-├── test_auth.py         # Auth tests — missing/invalid/valid key
-├── test_weather.py      # Weather endpoint tests
-├── test_cache.py        # Cache endpoint tests
-├── test_rate_limit.py   # Rate limit header and 429 tests
-└── test_history.py      # History endpoint tests
+├── conftest.py               # Shared fixtures — TestClient, mock services, async DB
+├── test_main.py              # Root, health, and metrics endpoint tests
+├── test_auth.py              # Auth tests — missing/invalid/valid key
+├── test_weather.py           # Weather endpoint + WeatherRequest validator unit tests
+├── test_weather_service.py   # WeatherService unit tests (mocked httpx + cache)
+├── test_cache.py             # Cache endpoint tests
+├── test_cache_service.py     # CacheService unit tests (mocked Redis)
+├── test_rate_limit.py        # Rate limit header and 429 tests
+├── test_history.py           # History endpoint tests
+└── test_benchmarks.py        # pytest-benchmark micro-benchmarks (excluded from CI)
 ```
 
 ## Setup
@@ -103,8 +108,10 @@ API docs available at [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
 ### Run tests
 
 ```bash
-uv run pytest tests/ -v
+uv run pytest tests/ --ignore=tests/test_benchmarks.py -v
 ```
+
+61 tests, 98% coverage. Benchmarks are excluded from the default run to keep it fast and deterministic — see [Run benchmarks](#run-benchmarks) below.
 
 ### Run with Docker
 
@@ -118,17 +125,18 @@ API docs available at [http://localhost:8000/docs](http://localhost:8000/docs)
 
 ## Endpoints
 
-All endpoints require an `X-API-Key` header.
+All endpoints require an `X-API-Key` header except `/metrics`.
 
-| Method   | Path          | Description                     |
-| -------- | ------------- | ------------------------------- |
-| `GET`    | `/`           | App name, description, version  |
-| `GET`    | `/health`     | Deep health check (Redis + API) |
-| `GET`    | `/v1/weather` | Fetch weather data              |
-| `GET`    | `/v1/cache`   | Retrieve a cached response      |
-| `POST`   | `/v1/cache`   | Store a response in cache       |
-| `DELETE` | `/v1/cache`   | Delete a cached response        |
-| `GET`    | `/v1/history` | List past weather requests      |
+| Method   | Path          | Auth required | Description                          |
+| -------- | ------------- | ------------- | ------------------------------------ |
+| `GET`    | `/`           | Yes           | App name, description, version       |
+| `GET`    | `/health`     | Yes           | Deep health check (Redis + API)      |
+| `GET`    | `/v1/weather` | Yes           | Fetch weather data                   |
+| `GET`    | `/v1/cache`   | Yes           | Retrieve a cached response           |
+| `POST`   | `/v1/cache`   | Yes           | Store a response in cache            |
+| `DELETE` | `/v1/cache`   | Yes           | Delete a cached response             |
+| `GET`    | `/v1/history` | Yes           | List past weather requests           |
+| `GET`    | `/metrics`    | No            | Prometheus metrics (scrape endpoint) |
 
 ### Weather endpoint parameters
 
