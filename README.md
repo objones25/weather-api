@@ -56,6 +56,7 @@ tests/
 ├── test_cache_service.py     # CacheService unit tests (mocked Redis)
 ├── test_rate_limit.py        # Rate limit header and 429 tests
 ├── test_history.py           # History endpoint tests
+├── test_telemetry.py         # Telemetry unit tests (mocked OTel packages)
 └── test_benchmarks.py        # pytest-benchmark micro-benchmarks (excluded from CI)
 ```
 
@@ -89,6 +90,7 @@ REDIS_HOST=your_redis_host
 REDIS_PORT=6379
 REDIS_USERNAME=default
 CACHE_TTL=43200
+CACHE_WARM_THRESHOLD=0.2
 RATE_LIMIT_REQUESTS=60
 RATE_LIMIT_WINDOW=60
 ENVIRONMENT=development
@@ -117,7 +119,7 @@ API docs available at [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
 uv run pytest tests/ --ignore=tests/test_benchmarks.py -v
 ```
 
-61 tests, 98% coverage. Benchmarks are excluded from the default run to keep it fast and deterministic — see [Run benchmarks](#run-benchmarks) below.
+72 tests, 99% coverage. Benchmarks are excluded from the default run to keep it fast and deterministic — see [Run benchmarks](#run-benchmarks) below.
 
 ### Run with Docker
 
@@ -209,12 +211,15 @@ curl -H "X-API-Key: your_key" "http://localhost:8000/v1/history?location=london&
 
 Each `WeatherRequest` is deterministically serialized to JSON (`model_dump(mode="json")`, `sort_keys=True`) and MD5-hashed to produce a fixed-length Redis key. Any change to request parameters produces a different key.
 
-### Cache-first flow
+### Cache-first flow with async warming
 
 ```text
-Request → CacheService.get() → hit  → deserialize → return WeatherResponse
-                              → miss → Visual Crossing API → CacheService.set() → return WeatherResponse
+Request → CacheService.get() → hit (fresh)          → deserialize → return WeatherResponse
+                              → hit (needs refresh)  → deserialize → fire background refresh → return WeatherResponse
+                              → miss                 → Visual Crossing API → CacheService.set() → return WeatherResponse
 ```
+
+`CacheService.get()` fetches the value and its TTL in a single Redis pipeline round-trip. If the remaining TTL falls below `CACHE_WARM_THRESHOLD` (default 20% of `CACHE_TTL`), the cached response is returned immediately and a background task silently refreshes the cache — so the next caller finds a fresh entry without ever waiting on the upstream API.
 
 ### Database migrations
 
@@ -242,6 +247,25 @@ All three read operations are batched into one pipeline round-trip.
 ### Middleware execution order
 
 Middleware is registered LIFO — `RequestIDMiddleware` runs first (sets `request.state.request_id`), then `TimingMiddleware` (reads the ID for its log line). Both are implemented as pure ASGI middleware (no `BaseHTTPMiddleware`) to avoid response-buffering overhead.
+
+## CI
+
+Two parallel jobs run on every push and pull request to `main`:
+
+| Job | What it does |
+|-----|--------------|
+| `lint` | `ruff check .` (imports, unused vars, etc.) + `ruff format --check .` (formatting) |
+| `test` | Full test suite with `--cov-fail-under=95` — build fails if coverage drops below 95% |
+
+Coverage is also written to the GitHub Actions step summary as a Markdown table.
+
+To run the same checks locally:
+
+```bash
+uv run ruff check .
+uv run ruff format --check .
+uv run pytest tests/ --ignore=tests/test_benchmarks.py --cov=app --cov-fail-under=95
+```
 
 ## Performance
 
