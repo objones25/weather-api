@@ -65,8 +65,8 @@ app.include_router(history_router)
 # Prometheus scrapers don't send API keys, so this endpoint must be unauthenticated.
 app.mount("/metrics", make_asgi_app())
 
-app.add_exception_handler(StarletteHTTPException, custom_http_exception_handler)
-app.add_exception_handler(RequestValidationError, custom_validation_exception_handler)
+app.add_exception_handler(StarletteHTTPException, custom_http_exception_handler)  # type: ignore[arg-type]
+app.add_exception_handler(RequestValidationError, custom_validation_exception_handler)  # type: ignore[arg-type]
 
 # RequestIDMiddleware registered last so it runs first (LIFO), ensuring
 # request.state.request_id is set before TimingMiddleware needs it

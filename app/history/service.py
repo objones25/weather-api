@@ -17,17 +17,17 @@ class HistoryService:
     ) -> tuple[list[RequestLog], int]:
         stmt = select(RequestLog)
         if location:
-            stmt = stmt.where(RequestLog.location.ilike(f"%{location}%"))
+            stmt = stmt.where(RequestLog.location.ilike(f"%{location}%"))  # type: ignore[attr-defined]
 
         total = await self.session.scalar(
             select(func.count()).select_from(stmt.subquery())
         )
         items = (
             await self.session.exec(
-                stmt.order_by(RequestLog.requested_at.desc())
+                stmt.order_by(RequestLog.requested_at.desc())  # type: ignore[attr-defined]
                 .offset(offset)
                 .limit(limit)
             )
         ).all()
 
-        return list(items), total
+        return list(items), total or 0
