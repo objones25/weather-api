@@ -7,6 +7,7 @@ from app.weather.schema import WeatherRequest, WeatherResponse
 from app.metrics import CACHE_REQUESTS_TOTAL
 import json
 import logging
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -23,10 +24,24 @@ class CacheService:
         self.cache_ttl = settings.cache_ttl
         self.warm_threshold = settings.cache_warm_threshold
 
+    @staticmethod
+    def _normalize_location(location: str) -> str:
+        """Lowercase and normalise whitespace/comma spacing for consistent cache keys.
+
+        Handles the most common spelling variants — case, extra spaces, and
+        irregular spacing around commas — so "New York , NY" and "new york,ny"
+        both produce the same key.  Does not resolve aliases (e.g. "NYC"); that
+        is handled by the resolvedAddress alias written in set().
+        """
+        loc = location.strip().lower()
+        loc = re.sub(r"\s+", " ", loc)
+        loc = re.sub(r"\s*,\s*", ", ", loc)
+        return loc
+
     def _create_key(self, request: WeatherRequest) -> str:
-        return md5(
-            json.dumps(request.model_dump(mode="json"), sort_keys=True).encode()
-        ).hexdigest()
+        data = request.model_dump(mode="json")
+        data["location"] = self._normalize_location(data["location"])
+        return md5(json.dumps(data, sort_keys=True).encode()).hexdigest()
 
     async def get(self, request: WeatherRequest) -> CacheResult:
         key = self._create_key(request)
@@ -50,6 +65,22 @@ class CacheService:
         value = response.model_dump_json()
         await self.client.set(key, value, ex=self.cache_ttl)
         logger.debug("Cache set for %s (ttl=%ds)", request.location, self.cache_ttl)
+
+        # Write a resolvedAddress alias so different spellings of the same place
+        # (e.g. "nyc" after "New York, NY, United States" was first queried) hit
+        # the cache on subsequent requests — no extra upstream call needed.
+        if response.resolvedAddress:
+            resolved_request = request.model_copy(
+                update={"location": response.resolvedAddress}
+            )
+            resolved_key = self._create_key(resolved_request)
+            if resolved_key != key:
+                await self.client.set(resolved_key, value, ex=self.cache_ttl)
+                logger.debug(
+                    "Cache alias set %s → %s",
+                    request.location,
+                    response.resolvedAddress,
+                )
 
     async def delete(self, request: WeatherRequest) -> None:
         key = self._create_key(request)

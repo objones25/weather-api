@@ -169,3 +169,73 @@ async def test_delete_calls_redis_with_correct_key(svc, redis):
     await svc.delete(req)
 
     redis.delete.assert_called_once_with(expected_key)
+
+
+# ---------------------------------------------------------------------------
+# _normalize_location
+# ---------------------------------------------------------------------------
+
+
+def test_normalize_location_lowercases_and_strips(svc):
+    assert svc._normalize_location("  NEW YORK  ") == "new york"
+
+
+def test_normalize_location_collapses_whitespace(svc):
+    assert svc._normalize_location("new  york") == "new york"
+
+
+def test_normalize_location_normalizes_commas(svc):
+    assert svc._normalize_location("new york , ny") == "new york, ny"
+
+
+# ---------------------------------------------------------------------------
+# _create_key — normalization
+# ---------------------------------------------------------------------------
+
+
+def test_create_key_case_insensitive(svc):
+    assert svc._create_key(WeatherRequest(location="London,UK")) == svc._create_key(
+        WeatherRequest(location="LONDON,UK")
+    )
+
+
+def test_create_key_whitespace_insensitive(svc):
+    assert svc._create_key(WeatherRequest(location="New York")) == svc._create_key(
+        WeatherRequest(location="  new york  ")
+    )
+
+
+# ---------------------------------------------------------------------------
+# set — resolvedAddress alias
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_set_writes_resolved_address_alias(svc, redis):
+    """When resolvedAddress differs from the request location, a second Redis
+    entry is written so future queries for the canonical form hit the cache."""
+    req = WeatherRequest(location="nyc")
+    resp = WeatherResponse(resolvedAddress="New York, NY, United States")
+
+    await svc.set(req, resp)
+
+    assert redis.set.call_count == 2
+
+
+@pytest.mark.anyio
+async def test_set_no_alias_when_resolved_matches_normalized(svc, redis):
+    """If the resolvedAddress normalises to the same key, only one write occurs."""
+    req = WeatherRequest(location="London, UK")
+    resp = WeatherResponse(resolvedAddress="london, uk")
+
+    await svc.set(req, resp)
+
+    assert redis.set.call_count == 1
+
+
+@pytest.mark.anyio
+async def test_set_no_alias_when_no_resolved_address(svc, redis):
+    """No alias write when the response carries no resolvedAddress."""
+    await svc.set(WeatherRequest(location="London"), WeatherResponse())
+
+    assert redis.set.call_count == 1

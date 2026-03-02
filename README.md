@@ -6,6 +6,8 @@ An async FastAPI wrapper around the [Visual Crossing Timeline Weather API](https
 
 - Fetch current, historical, and forecast weather data for any location
 - **Batch endpoint** — fetch up to 10 locations in one request; fanned out concurrently with `asyncio.gather`; partial failures return per-item errors rather than failing the whole batch
+- **Cache warm endpoint** — pre-populate the cache for up to 50 locations in one call; useful at deploy time to avoid cold-start latency spikes
+- **Geocoding normalisation** — location strings are lower-cased and whitespace/comma-normalised before hashing, so `"London,UK"` and `"LONDON, UK"` share a cache key; after each upstream fetch the `resolvedAddress` from Visual Crossing is also written as an alias, so a second query for `"nyc"` after a prior query for `"New York, NY"` hits the cache
 - Redis caching with configurable TTL — repeated requests served in ~100ms vs ~400ms from the upstream API
 - Request history stored in SQLite — queryable with location filter and offset pagination
 - Sliding window rate limiting via Redis sorted sets (`X-RateLimit-*` headers); batch requests consume N+1 units (1 global + N per location)
@@ -37,8 +39,9 @@ alembic/
 ├── exceptions.py        # Custom HTTP and validation exception handlers
 ├── middleware.py        # TimingMiddleware, RequestIDMiddleware (pure ASGI) — records HTTP metrics
 ├── cache/
-│   ├── service.py       # CacheService — Redis get/set/delete with MD5 request key hashing
-│   └── routes.py        # /v1/cache GET/POST/DELETE endpoints
+│   ├── schema.py        # CacheWarmRequest/Error/Response models
+│   ├── service.py       # CacheService — Redis get/set/delete; location normalisation; resolvedAddress alias
+│   └── routes.py        # /v1/cache GET/POST/DELETE and /v1/cache/warm endpoints
 ├── history/
 │   ├── models.py        # RequestLog SQLModel table
 │   ├── service.py       # HistoryService — list with filter and pagination
@@ -120,7 +123,7 @@ API docs available at [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
 uv run pytest tests/ --ignore=tests/test_benchmarks.py -v
 ```
 
-85 tests, 99% coverage. Benchmarks are excluded from the default run to keep it fast and deterministic — see [Run benchmarks](#run-benchmarks) below.
+98 tests, 99% coverage. Benchmarks are excluded from the default run to keep it fast and deterministic — see [Run benchmarks](#run-benchmarks) below.
 
 ### Run with Docker
 
@@ -159,6 +162,7 @@ All endpoints require an `X-API-Key` header except `/metrics`.
 | `GET`    | `/v1/cache`         | Yes           | Retrieve a cached response                       |
 | `POST`   | `/v1/cache`         | Yes           | Store a response in cache                        |
 | `DELETE` | `/v1/cache`         | Yes           | Delete a cached response                         |
+| `POST`   | `/v1/cache/warm`    | Yes           | Pre-populate cache for up to 50 locations        |
 | `GET`    | `/v1/history`       | Yes           | List past weather requests                       |
 | `GET`    | `/metrics`          | No            | Prometheus metrics (scrape endpoint)             |
 
@@ -201,6 +205,30 @@ Response shape — each item in `results` has a `status` of `"ok"` or `"error"`,
 ```
 
 **Rate limiting:** a batch of N costs N+1 units — 1 from the global per-request check, plus N consumed by the batch pre-check. A 429 is returned before any upstream calls are made if the budget is insufficient.
+
+### Cache warm endpoint
+
+`POST /v1/cache/warm` accepts a JSON body with a `locations` array of 1–50 `WeatherRequest` objects. Each object supports the same parameters as the single-location endpoint.
+
+```json
+{
+  "locations": [
+    { "location": "London,UK" },
+    { "location": "Tokyo,JP", "unit_group": "metric" }
+  ]
+}
+```
+
+Response shape — partial failures are reported per item, the overall HTTP status is always 200:
+
+```json
+{
+  "total": 2,
+  "succeeded": 2,
+  "failed": 0,
+  "errors": []
+}
+```
 
 ### History endpoint parameters
 
@@ -264,6 +292,36 @@ Alembic manages all schema changes. Migration scripts live in `alembic/versions/
 ```bash
 alembic revision --autogenerate -m "describe the change"
 alembic upgrade head
+```
+
+### Geocoding normalisation
+
+Before building the MD5 cache key, `CacheService._normalize_location()` lower-cases the location string and collapses irregular whitespace and comma spacing. This ensures `"London,UK"`, `"LONDON, UK"`, and `"london, uk"` all map to the same key at no extra cost.
+
+After each upstream fetch, the `resolvedAddress` field from the Visual Crossing response is also written as a second Redis entry (an alias). If the canonical key differs from the original, the same JSON is stored under both keys. This means a later query for `"new york, ny, united states"` after a prior query for `"nyc"` hits the cache — no upstream call required.
+
+### Cache warm flow
+
+`POST /v1/cache/warm` accepts a JSON body with a `locations` array of 1–50 `WeatherRequest` objects. Fetches are fanned out concurrently with `asyncio.gather(return_exceptions=True)`. Already-cached locations are served from Redis and counted as succeeded. Returns a summary (`total`, `succeeded`, `failed`, `errors`) once all fetches complete — the same partial-failure pattern used by the batch weather endpoint.
+
+```bash
+curl -s -X POST http://localhost:8000/v1/cache/warm \
+  -H "X-API-Key: your_key" \
+  -H "Content-Type: application/json" \
+  -d '{"locations": [{"location": "London,UK"}, {"location": "Tokyo,JP"}, {"location": "Sydney,AU"}]}' | jq .
+```
+
+Response shape:
+
+```json
+{
+  "total": 3,
+  "succeeded": 2,
+  "failed": 1,
+  "errors": [
+    { "location": "Sydney,AU", "detail": "400: Bad request" }
+  ]
+}
 ```
 
 ### Request history
