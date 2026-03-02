@@ -5,9 +5,10 @@ An async FastAPI wrapper around the [Visual Crossing Timeline Weather API](https
 ## Features
 
 - Fetch current, historical, and forecast weather data for any location
+- **Batch endpoint** — fetch up to 10 locations in one request; fanned out concurrently with `asyncio.gather`; partial failures return per-item errors rather than failing the whole batch
 - Redis caching with configurable TTL — repeated requests served in ~100ms vs ~400ms from the upstream API
 - Request history stored in SQLite — queryable with location filter and offset pagination
-- Sliding window rate limiting via Redis sorted sets (`X-RateLimit-*` headers)
+- Sliding window rate limiting via Redis sorted sets (`X-RateLimit-*` headers); batch requests consume N+1 units (1 global + N per location)
 - Prometheus metrics exposed at `/metrics` — HTTP request counts, latency histograms, cache hit/miss counters, rate limit rejections
 - Full Pydantic v2 validation on requests and responses
 - Async throughout — `httpx.AsyncClient` for HTTP, `redis.asyncio` for cache, `aiosqlite` for history
@@ -43,9 +44,9 @@ alembic/
 │   ├── service.py       # HistoryService — list with filter and pagination
 │   └── routes.py        # /v1/history GET endpoint
 └── weather/
-    ├── schema.py        # WeatherRequest (with enums + validation) and WeatherResponse models
-    ├── service.py       # WeatherService — cache-first fetch, URL/param building
-    └── routes.py        # /v1/weather endpoint, logs requests as background task
+    ├── schema.py        # WeatherRequest, WeatherResponse, BatchWeatherRequest/Item/Response
+    ├── service.py       # WeatherService — cache-first fetch, batch fan-out via asyncio.gather
+    └── routes.py        # /v1/weather and /v1/weather/batch endpoints
 tests/
 ├── conftest.py               # Shared fixtures — TestClient, mock services, async DB
 ├── test_main.py              # Root, health, and metrics endpoint tests
@@ -119,7 +120,7 @@ API docs available at [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
 uv run pytest tests/ --ignore=tests/test_benchmarks.py -v
 ```
 
-72 tests, 99% coverage. Benchmarks are excluded from the default run to keep it fast and deterministic — see [Run benchmarks](#run-benchmarks) below.
+85 tests, 99% coverage. Benchmarks are excluded from the default run to keep it fast and deterministic — see [Run benchmarks](#run-benchmarks) below.
 
 ### Run with Docker
 
@@ -149,16 +150,17 @@ Jaeger UI available at [http://localhost:16686](http://localhost:16686)
 
 All endpoints require an `X-API-Key` header except `/metrics`.
 
-| Method   | Path          | Auth required | Description                          |
-| -------- | ------------- | ------------- | ------------------------------------ |
-| `GET`    | `/`           | Yes           | App name, description, version       |
-| `GET`    | `/health`     | Yes           | Deep health check (Redis + API)      |
-| `GET`    | `/v1/weather` | Yes           | Fetch weather data                   |
-| `GET`    | `/v1/cache`   | Yes           | Retrieve a cached response           |
-| `POST`   | `/v1/cache`   | Yes           | Store a response in cache            |
-| `DELETE` | `/v1/cache`   | Yes           | Delete a cached response             |
-| `GET`    | `/v1/history` | Yes           | List past weather requests           |
-| `GET`    | `/metrics`    | No            | Prometheus metrics (scrape endpoint) |
+| Method   | Path                  | Auth required | Description                                      |
+| -------- | --------------------- | ------------- | ------------------------------------------------ |
+| `GET`    | `/`                   | Yes           | App name, description, version                   |
+| `GET`    | `/health`             | Yes           | Deep health check (Redis + API)                  |
+| `GET`    | `/v1/weather`         | Yes           | Fetch weather for a single location              |
+| `POST`   | `/v1/weather/batch`   | Yes           | Fetch weather for up to 10 locations in parallel |
+| `GET`    | `/v1/cache`           | Yes           | Retrieve a cached response                       |
+| `POST`   | `/v1/cache`           | Yes           | Store a response in cache                        |
+| `DELETE` | `/v1/cache`           | Yes           | Delete a cached response                         |
+| `GET`    | `/v1/history`         | Yes           | List past weather requests                       |
+| `GET`    | `/metrics`            | No            | Prometheus metrics (scrape endpoint)             |
 
 ### Weather endpoint parameters
 
@@ -171,6 +173,34 @@ All endpoints require an `X-API-Key` header except `/metrics`.
 | `include`    | list   | No       | —       | Sections to include: `days`, `hours`, `current`, `alerts`, `obs`, etc.        |
 | `elements`   | list   | No       | —       | Specific fields to return — supports `add:element` / `remove:element`         |
 | `lang`       | enum   | No       | `en`    | Response language — 28 languages supported                                    |
+
+### Batch endpoint
+
+`POST /v1/weather/batch` accepts a JSON body with a `locations` array of 1–10 `WeatherRequest` objects. Each object supports the same parameters as the single-location endpoint.
+
+```json
+{
+  "locations": [
+    { "location": "London,UK" },
+    { "location": "Tokyo,JP", "unit_group": "metric" },
+    { "location": "New York", "date1": "2026-01-01", "date2": "2026-01-07" }
+  ]
+}
+```
+
+Response shape — each item in `results` has a `status` of `"ok"` or `"error"`, and order matches the request:
+
+```json
+{
+  "results": [
+    { "location": "London,UK", "status": "ok", "result": { ... }, "error": null },
+    { "location": "Tokyo,JP",  "status": "ok", "result": { ... }, "error": null },
+    { "location": "New York",  "status": "error", "result": null, "error": "400: Bad request" }
+  ]
+}
+```
+
+**Rate limiting:** a batch of N costs N+1 units — 1 from the global per-request check, plus N consumed by the batch pre-check. A 429 is returned before any upstream calls are made if the budget is insufficient.
 
 ### History endpoint parameters
 
@@ -193,6 +223,12 @@ curl -H "X-API-Key: your_key" "http://localhost:8000/v1/weather?location=New+Yor
 
 # Current conditions only
 curl -H "X-API-Key: your_key" "http://localhost:8000/v1/weather?location=Tokyo&include=current"
+
+# Batch request — 3 locations in one round-trip
+curl -s -X POST http://localhost:8000/v1/weather/batch \
+  -H "X-API-Key: your_key" \
+  -H "Content-Type: application/json" \
+  -d '{"locations": [{"location": "London,UK"}, {"location": "Tokyo,JP"}, {"location": "Sydney,AU"}]}' | jq .
 
 # Recent request history
 curl -H "X-API-Key: your_key" "http://localhost:8000/v1/history"
@@ -243,6 +279,8 @@ Sliding window algorithm using a Redis sorted set per API key:
 3. Record this request (`ZADD`) and refresh TTL (`EXPIRE`)
 
 All three read operations are batched into one pipeline round-trip.
+
+For the batch endpoint, a second check runs immediately after the global one. If the remaining budget is less than N (the batch size), a 429 is returned before any upstream calls are made. Total cost: N+1 units per batch of N.
 
 ### Middleware execution order
 
