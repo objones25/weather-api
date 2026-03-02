@@ -25,7 +25,7 @@ class CacheService:
 
     async def set(self, request: WeatherRequest, response: WeatherResponse) -> None:
         key = self._create_key(request)
-        value = json.dumps(response.model_dump(mode="json"))
+        value = response.model_dump_json()
         await self.client.set(key, value, ex=self.cache_ttl)
         logger.debug("Cache set for %s (ttl=%ds)", request.location, self.cache_ttl)
 

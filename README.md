@@ -214,3 +214,32 @@ All three read operations are batched into one pipeline round-trip.
 ### Middleware execution order
 
 Middleware is registered LIFO — `RequestIDMiddleware` runs first (sets `request.state.request_id`), then `TimingMiddleware` (reads the ID for its log line). Both are implemented as pure ASGI middleware (no `BaseHTTPMiddleware`) to avoid response-buffering overhead.
+
+## Performance
+
+Benchmarks were measured with `pytest-benchmark` against a realistic 15-day forecast payload (15 `DailyWeather` objects × 24 `HourlyWeather` each, plus `currentConditions` and station metadata).
+
+| Operation                               | Mean     | Notes                                          |
+| --------------------------------------- | -------- | ---------------------------------------------- |
+| `WeatherRequest` parsing                | ~851 ns  | Runs on every request — negligible             |
+| Cache key generation (MD5)              | ~4.5 μs  | Runs on every request — negligible             |
+| `WeatherResponse.model_validate()`      | ~641 μs  | Cache-miss path: dict → model                  |
+| `WeatherResponse.model_dump_json()`     | ~714 μs  | Cache-miss path: model → JSON string for Redis |
+| `WeatherResponse.model_validate_json()` | ~1.06 ms | Cache-hit path: JSON string → model            |
+
+**CPU cost per request:**
+
+- Cache hit: ~1.06 ms (validation only)
+- Cache miss: ~1.36 ms (validation + serialisation) + ~300–600 ms upstream API
+
+Pydantic overhead is under 0.5% of total latency on a cache miss. The main beneficiary of caching is eliminating the upstream API call, not CPU savings.
+
+**Serialisation note:** `CacheService.set()` uses `model_dump_json()` (Pydantic's Rust-backed serialiser) rather than `model_dump(mode="json") + json.dumps()`. This cut serialisation time from ~1.64 ms to ~714 μs — a 2.3× improvement.
+
+### Run benchmarks
+
+```bash
+uv run pytest tests/test_benchmarks.py -v --benchmark-sort=mean
+```
+
+Benchmarks are excluded from CI (`--ignore=tests/test_benchmarks.py`) to keep the test run fast and deterministic.

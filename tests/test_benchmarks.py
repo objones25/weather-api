@@ -208,8 +208,10 @@ def test_bench_response_validate_from_json(benchmark):
 
 
 def test_bench_response_serialize_to_json(benchmark, parsed_response):
-    """model_dump + json.dumps (cache-set serialisation path).
+    """model_dump_json() — cache-set serialisation path (optimised).
 
+    Uses Pydantic's Rust-backed serialiser directly instead of the prior
+    model_dump(mode="json") + json.dumps() two-step round-trip.
     Runs once per cache miss, after a successful upstream API call.
     """
-    benchmark(lambda: json.dumps(parsed_response.model_dump(mode="json")))
+    benchmark(parsed_response.model_dump_json)
