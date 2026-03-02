@@ -1,5 +1,6 @@
 from app.config import get_settings
 from app.logging import setup_logging
+from app.telemetry import setup_tracing, instrument_sqlalchemy
 from app.exceptions import custom_http_exception_handler, custom_validation_exception_handler
 from app.middleware import TimingMiddleware, RequestIDMiddleware
 from app.auth import verify_api_key
@@ -24,9 +25,14 @@ settings = get_settings()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     setup_logging(settings)
+    # setup_tracing before clients are created so httpx/Redis monkey-patching
+    # is in place when those clients are instantiated below.
+    setup_tracing(app, settings)
     app.state.http_client = AsyncClient(params={"key": settings.weather_api_key})
     app.state.redis_client = Redis(host=settings.redis_host, port=settings.redis_port, username=settings.redis_username, password=settings.redis_password, decode_responses=True)
     app.state.db_engine, app.state.db_session_factory = await init_db(settings)
+    # instrument_sqlalchemy after the engine exists — it needs the sync_engine reference.
+    instrument_sqlalchemy(app.state.db_engine, settings)
     yield
     await app.state.http_client.aclose()
     await app.state.redis_client.aclose()

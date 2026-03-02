@@ -52,6 +52,17 @@ services:
     networks:
       - backend
 
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    profiles: [tracing]
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "16686:16686"  # Jaeger UI
+      - "4318:4318"    # OTLP HTTP receiver (api -> jaeger)
+    networks:
+      - backend
+
 networks:
   backend:
     driver: bridge

@@ -27,6 +27,7 @@ app/
 ├── auth.py              # API key authentication dependency
 ├── rate_limit.py        # Sliding window rate limiter dependency
 ├── metrics.py           # Prometheus metric definitions (Counter, Histogram)
+├── telemetry.py         # OpenTelemetry setup — tracer provider, FastAPI/httpx/Redis/SQLAlchemy instrumentation
 ├── database.py          # Async SQLite engine init, get_session dependency
 alembic/
 ├── env.py               # Async-compatible migration environment
@@ -93,6 +94,11 @@ RATE_LIMIT_WINDOW=60
 ENVIRONMENT=development
 LOG_LEVEL=DEBUG
 DATABASE_URL=sqlite+aiosqlite:///./history.db
+
+# OpenTelemetry tracing (disabled by default)
+OTEL_ENABLED=false
+OTEL_ENDPOINT=http://localhost:4318
+OTEL_SERVICE_NAME=weather-api
 ```
 
 ### Run
@@ -124,6 +130,18 @@ docker compose up --build
 API docs available at [http://localhost:8000/docs](http://localhost:8000/docs)
 
 Request history is persisted in a named Docker volume (`sqlite_data`) so it survives container restarts. Redis is not exposed to the host — services communicate over an internal `backend` network.
+
+To run with distributed tracing, add Jaeger via the `tracing` profile and enable OTel in `.env`:
+
+```bash
+# .env additions
+OTEL_ENABLED=true
+OTEL_ENDPOINT=http://jaeger:4318
+
+docker compose --profile tracing up --build
+```
+
+Jaeger UI available at [http://localhost:16686](http://localhost:16686)
 
 ## Endpoints
 

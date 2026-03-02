@@ -19,6 +19,9 @@ class Settings(BaseSettings):
     rate_limit_requests: int = 60
     rate_limit_window: int = 60
     database_url: str = "sqlite+aiosqlite:///./history.db"
+    otel_enabled: bool = False
+    otel_endpoint: str = "http://localhost:4318"
+    otel_service_name: str = "weather-api"
 
     model_config = SettingsConfigDict(env_file=".env")
 
