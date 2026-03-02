@@ -1,6 +1,9 @@
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from fastapi.exceptions import RequestValidationError
-from fastapi.exception_handlers import http_exception_handler, request_validation_exception_handler
+from fastapi.exception_handlers import (
+    http_exception_handler,
+    request_validation_exception_handler,
+)
 from fastapi import Request
 import logging
 
@@ -19,7 +22,9 @@ async def custom_http_exception_handler(request: Request, exc: StarletteHTTPExce
     return await http_exception_handler(request, exc)
 
 
-async def custom_validation_exception_handler(request: Request, exc: RequestValidationError):
+async def custom_validation_exception_handler(
+    request: Request, exc: RequestValidationError
+):
     logger.warning(
         "%s %s 422 - %s",
         request.method,

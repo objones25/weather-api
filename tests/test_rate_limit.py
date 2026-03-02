@@ -9,10 +9,12 @@ settings = get_settings()
 def test_under_limit(rate_limit_client, mock_weather_service):
     client, mock_redis = rate_limit_client
     # Read pipeline: count=0, no oldest entry. Write pipeline: success.
-    mock_redis.pipeline = MagicMock(side_effect=[
-        make_pipeline_ctx([None, 0, []]),
-        make_pipeline_ctx([None, None]),
-    ])
+    mock_redis.pipeline = MagicMock(
+        side_effect=[
+            make_pipeline_ctx([None, 0, []]),
+            make_pipeline_ctx([None, None]),
+        ]
+    )
     mock_weather_service.get_weather.return_value = WeatherResponse()
     response = client.get("/v1/weather?location=London,UK")
     assert response.status_code == 200

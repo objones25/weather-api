@@ -24,7 +24,9 @@ class HistoryService:
         )
         items = (
             await self.session.exec(
-                stmt.order_by(RequestLog.requested_at.desc()).offset(offset).limit(limit)
+                stmt.order_by(RequestLog.requested_at.desc())
+                .offset(offset)
+                .limit(limit)
             )
         ).all()
 

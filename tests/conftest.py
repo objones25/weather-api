@@ -13,6 +13,12 @@ from app.database import get_session
 from unittest.mock import AsyncMock, MagicMock
 from app.cache.service import get_cache_service
 from app.weather.service import get_weather_service
+from app.config import Settings
+
+
+@fixture
+def settings():
+    return Settings(weather_api_key="dummy", redis_password="dummy", api_key="dummy")
 
 
 @fixture
@@ -29,6 +35,7 @@ def make_pipeline_ctx(execute_results):
     ctx.__aexit__ = AsyncMock(return_value=False)
     return ctx
 
+
 @fixture
 def client():
     app.dependency_overrides[verify_api_key] = lambda: None
@@ -37,17 +44,20 @@ def client():
         yield c
     app.dependency_overrides.clear()
 
+
 @fixture
 def raw_client():
     with TestClient(app) as c:
         yield c
     app.dependency_overrides.clear()
 
+
 @fixture
 def mock_weather_service():
     service = AsyncMock()
     app.dependency_overrides[get_weather_service] = lambda: service
     yield service
+
 
 @fixture
 def mock_cache_service():

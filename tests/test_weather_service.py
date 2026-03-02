@@ -14,17 +14,11 @@ from fastapi import HTTPException
 from app.weather.service import WeatherService
 from app.weather.schema import WeatherRequest, WeatherResponse, IncludeOption
 from app.cache.service import CacheResult
-from app.config import Settings
 
 
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
-
-
-@pytest.fixture
-def settings():
-    return Settings(weather_api_key="dummy", redis_password="dummy", api_key="dummy")
 
 
 @pytest.fixture

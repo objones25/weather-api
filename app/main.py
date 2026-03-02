@@ -1,7 +1,10 @@
 from app.config import get_settings
 from app.logging import setup_logging
 from app.telemetry import setup_tracing, instrument_sqlalchemy
-from app.exceptions import custom_http_exception_handler, custom_validation_exception_handler
+from app.exceptions import (
+    custom_http_exception_handler,
+    custom_validation_exception_handler,
+)
 from app.middleware import TimingMiddleware, RequestIDMiddleware
 from app.auth import verify_api_key
 from app.rate_limit import check_rate_limit
@@ -22,6 +25,7 @@ import time
 
 settings = get_settings()
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     setup_logging(settings)
@@ -29,7 +33,13 @@ async def lifespan(app: FastAPI):
     # is in place when those clients are instantiated below.
     setup_tracing(app, settings)
     app.state.http_client = AsyncClient(params={"key": settings.weather_api_key})
-    app.state.redis_client = Redis(host=settings.redis_host, port=settings.redis_port, username=settings.redis_username, password=settings.redis_password, decode_responses=True)
+    app.state.redis_client = Redis(
+        host=settings.redis_host,
+        port=settings.redis_port,
+        username=settings.redis_username,
+        password=settings.redis_password,
+        decode_responses=True,
+    )
     app.state.db_engine, app.state.db_session_factory = await init_db(settings)
     # instrument_sqlalchemy after the engine exists — it needs the sync_engine reference.
     instrument_sqlalchemy(app.state.db_engine, settings)
@@ -38,7 +48,14 @@ async def lifespan(app: FastAPI):
     await app.state.redis_client.aclose()
     await app.state.db_engine.dispose()
 
-app = FastAPI(title=settings.app_name, description=settings.app_description, version=settings.app_version, lifespan=lifespan, dependencies=[Depends(verify_api_key), Depends(check_rate_limit)])
+
+app = FastAPI(
+    title=settings.app_name,
+    description=settings.app_description,
+    version=settings.app_version,
+    lifespan=lifespan,
+    dependencies=[Depends(verify_api_key), Depends(check_rate_limit)],
+)
 
 app.include_router(weather_router)
 app.include_router(cache_router)
@@ -56,6 +73,7 @@ app.add_exception_handler(RequestValidationError, custom_validation_exception_ha
 app.add_middleware(TimingMiddleware)
 app.add_middleware(RequestIDMiddleware)
 
+
 @app.get("/")
 async def root():
     return {
@@ -63,6 +81,7 @@ async def root():
         "description": settings.app_description,
         "version": settings.app_version,
     }
+
 
 async def _check(coro) -> dict:
     now = time.time()

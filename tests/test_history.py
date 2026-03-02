@@ -31,7 +31,9 @@ async def test_history_returns_entries(history_client, db_session):
 async def test_history_ordered_newest_first(history_client, db_session):
     now = datetime.now(timezone.utc)
     async with db_session() as session:
-        session.add(RequestLog(location="London,UK", requested_at=now - timedelta(hours=1)))
+        session.add(
+            RequestLog(location="London,UK", requested_at=now - timedelta(hours=1))
+        )
         session.add(RequestLog(location="Paris,FR", requested_at=now))
         await session.commit()
 

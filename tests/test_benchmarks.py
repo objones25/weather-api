@@ -164,7 +164,9 @@ def weather_request() -> WeatherRequest:
 @pytest.fixture(scope="module")
 def cache_service() -> CacheService:
     # Only _create_key() is exercised — client is never called.
-    settings = Settings(weather_api_key="dummy", redis_password="dummy", api_key="dummy")
+    settings = Settings(
+        weather_api_key="dummy", redis_password="dummy", api_key="dummy"
+    )
     return CacheService(settings, client=None)  # type: ignore[arg-type]
 
 
@@ -185,7 +187,9 @@ def test_bench_cache_key_generation(benchmark, weather_request, cache_service):
 
 def test_bench_request_model_parsing(benchmark):
     """Pydantic validation of an incoming WeatherRequest."""
-    benchmark(WeatherRequest, location="London,UK", date1="2024-01-01", date2="2024-01-15")
+    benchmark(
+        WeatherRequest, location="London,UK", date1="2024-01-01", date2="2024-01-15"
+    )
 
 
 def test_bench_response_validate_from_dict(benchmark):

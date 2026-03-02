@@ -7,21 +7,15 @@ No HTTP layer, no dependency_overrides — every method is exercised directly.
 
 import json
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 from app.cache.service import CacheService, CacheResult
 from app.weather.schema import WeatherRequest, WeatherResponse
-from app.config import Settings
 
 
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
-
-
-@pytest.fixture
-def settings():
-    return Settings(weather_api_key="dummy", redis_password="dummy", api_key="dummy")
 
 
 @pytest.fixture

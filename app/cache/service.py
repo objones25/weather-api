@@ -24,7 +24,9 @@ class CacheService:
         self.warm_threshold = settings.cache_warm_threshold
 
     def _create_key(self, request: WeatherRequest) -> str:
-        return md5(json.dumps(request.model_dump(mode="json"), sort_keys=True).encode()).hexdigest()
+        return md5(
+            json.dumps(request.model_dump(mode="json"), sort_keys=True).encode()
+        ).hexdigest()
 
     async def get(self, request: WeatherRequest) -> CacheResult:
         key = self._create_key(request)
@@ -55,5 +57,7 @@ class CacheService:
         logger.debug("Cache deleted for %s", request.location)
 
 
-def get_cache_service(request: Request, settings: Settings = Depends(get_settings)) -> CacheService:
+def get_cache_service(
+    request: Request, settings: Settings = Depends(get_settings)
+) -> CacheService:
     return CacheService(settings, request.app.state.redis_client)

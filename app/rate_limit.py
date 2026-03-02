@@ -6,7 +6,13 @@ from app.auth import api_key_header
 from uuid import uuid4
 import time
 
-async def check_rate_limit(request: Request, response: Response,key: str = Security(api_key_header), settings: Settings = Depends(get_settings)) -> None:
+
+async def check_rate_limit(
+    request: Request,
+    response: Response,
+    key: str = Security(api_key_header),
+    settings: Settings = Depends(get_settings),
+) -> None:
     redis: Redis = request.app.state.redis_client
     now = time.time()
     window_start = now - settings.rate_limit_window
@@ -18,9 +24,15 @@ async def check_rate_limit(request: Request, response: Response,key: str = Secur
         pipe.zrange(redis_key, 0, 0, withscores=True)
         _, count, oldest = await pipe.execute()
 
-    reset_time = (oldest[0][1] + settings.rate_limit_window) if oldest else (now + settings.rate_limit_window)
+    reset_time = (
+        (oldest[0][1] + settings.rate_limit_window)
+        if oldest
+        else (now + settings.rate_limit_window)
+    )
     response.headers["X-RateLimit-Limit"] = str(settings.rate_limit_requests)
-    response.headers["X-RateLimit-Remaining"] = str(max(settings.rate_limit_requests - count, 0))
+    response.headers["X-RateLimit-Remaining"] = str(
+        max(settings.rate_limit_requests - count, 0)
+    )
     response.headers["X-RateLimit-Reset"] = str(int(reset_time))
 
     if count >= settings.rate_limit_requests:

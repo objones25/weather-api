@@ -2,6 +2,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from functools import lru_cache
 from typing import Literal
 
+
 class Settings(BaseSettings):
     app_name: str = "Weather API"
     app_description: str = "Weather API wrapper with fastapi"
@@ -13,7 +14,9 @@ class Settings(BaseSettings):
     redis_username: str = "default"
     redis_password: str
     cache_ttl: int = 43200
-    cache_warm_threshold: float = 0.2  # refresh when remaining TTL < this fraction of cache_ttl
+    cache_warm_threshold: float = (
+        0.2  # refresh when remaining TTL < this fraction of cache_ttl
+    )
     environment: Literal["development", "production"] = "development"
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "DEBUG"
     api_key: str

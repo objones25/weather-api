@@ -7,18 +7,22 @@ from opentelemetry import trace
 from opentelemetry.trace import StatusCode
 
 from fastapi import Depends, HTTPException, Request
-from app.cache.service import CacheService, CacheResult, get_cache_service
+from app.cache.service import CacheService, get_cache_service
 from app.config import Settings, get_settings
 from app.metrics import CACHE_WARM_TOTAL
 from app.weather.schema import WeatherRequest, WeatherResponse
 
 logger = logging.getLogger(__name__)
 
+
 class WeatherService:
-    def __init__(self, client: AsyncClient, cache_service: CacheService, settings: Settings) -> None:
+    def __init__(
+        self, client: AsyncClient, cache_service: CacheService, settings: Settings
+    ) -> None:
         self.client = client
         self.cache_service = cache_service
         self.api_url = settings.weather_api_url
+
     def _build_url(self, request: WeatherRequest) -> str:
         parts = [
             self.api_url,
@@ -28,7 +32,7 @@ class WeatherService:
         ]
         url = "/".join(filter(None, parts))
         return url
-    
+
     def _build_params(self, request: WeatherRequest) -> dict:
         params = {
             "unitGroup": request.unit_group.value,
@@ -42,7 +46,7 @@ class WeatherService:
             params["elements"] = ",".join(request.elements)
 
         return params
-    
+
     async def get_weather(self, request: WeatherRequest) -> WeatherResponse:
         t0 = time.perf_counter()
         cached = await self.cache_service.get(request)
@@ -63,7 +67,11 @@ class WeatherService:
                 asyncio.create_task(self._refresh_cache(request))
             return result
 
-        logger.debug("Cache miss for %s [redis=%dms] — fetching from API", request.location, int((t1 - t0) * 1000))
+        logger.debug(
+            "Cache miss for %s [redis=%dms] — fetching from API",
+            request.location,
+            int((t1 - t0) * 1000),
+        )
         url = self._build_url(request)
         params = self._build_params(request)
         try:
@@ -85,11 +93,22 @@ class WeatherService:
             )
             return weather_response
         except HTTPStatusError as e:
-            logger.error("Upstream API error for %s: %d %s", request.location, e.response.status_code, e.response.text)
-            raise HTTPException(status_code=e.response.status_code, detail=e.response.text)
+            logger.error(
+                "Upstream API error for %s: %d %s",
+                request.location,
+                e.response.status_code,
+                e.response.text,
+            )
+            raise HTTPException(
+                status_code=e.response.status_code, detail=e.response.text
+            )
         except RequestError as e:
-            logger.error("Network error reaching weather API for %s: %s", request.location, e)
-            raise HTTPException(status_code=503, detail=f"Could not reach weather service: {e}")
+            logger.error(
+                "Network error reaching weather API for %s: %s", request.location, e
+            )
+            raise HTTPException(
+                status_code=503, detail=f"Could not reach weather service: {e}"
+            )
 
     async def _refresh_cache(self, request: WeatherRequest) -> None:
         """Fetch fresh data from upstream and update the cache entry.
@@ -119,6 +138,8 @@ class WeatherService:
                 logger.error("Cache warm failed for %s: %s", request.location, e)
 
 
-def get_weather_service(request: Request, settings: Settings = Depends(get_settings)) -> WeatherService:
+def get_weather_service(
+    request: Request, settings: Settings = Depends(get_settings)
+) -> WeatherService:
     cache_service = get_cache_service(request, settings)
     return WeatherService(request.app.state.http_client, cache_service, settings)

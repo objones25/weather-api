@@ -27,10 +27,10 @@ def setup_logging(settings: Settings) -> None:
             },
         },
         "loggers": {
-            "uvicorn":   {"level": "WARNING", "propagate": False},
-            "httpx":     {"level": "WARNING", "propagate": False},
-            "httpcore":  {"level": "WARNING", "propagate": False},
-            "redis":     {"level": "WARNING", "propagate": False},
+            "uvicorn": {"level": "WARNING", "propagate": False},
+            "httpx": {"level": "WARNING", "propagate": False},
+            "httpcore": {"level": "WARNING", "propagate": False},
+            "redis": {"level": "WARNING", "propagate": False},
         },
         "root": {
             "level": settings.log_level,

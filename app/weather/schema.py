@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 # Enums – values taken directly from the Visual Crossing API docs
 # ---------------------------------------------------------------------------
 
+
 class UnitGroup(str, Enum):
     US = "us"
     UK = "uk"
@@ -70,6 +71,7 @@ class Element(str, Enum):
     included here. The field_validator on WeatherRequest.elements allows
     them through via the add:/remove: prefix path rather than blocking them.
     """
+
     CLOUDCOVER = "cloudcover"
     CONDITIONS = "conditions"
     DESCRIPTION = "description"
@@ -128,6 +130,7 @@ class Element(str, Enum):
 # Request
 # ---------------------------------------------------------------------------
 
+
 class WeatherRequest(BaseModel):
     location: str = Field(
         description="Address, city name, lat/lon (e.g. '51.5,-0.12'), ZIP code, or airport code."
@@ -179,7 +182,7 @@ class WeatherRequest(BaseModel):
                     f"standard documented list."
                 )
         return v
-    
+
     @field_validator("location")
     @classmethod
     def validate_location(cls, v: str) -> str:
@@ -197,6 +200,7 @@ class WeatherRequest(BaseModel):
 # ---------------------------------------------------------------------------
 # Response – inner objects (bottom-up so forward refs aren't needed)
 # ---------------------------------------------------------------------------
+
 
 class HourlyWeather(BaseModel):
     datetime: str
@@ -323,16 +327,41 @@ class CurrentConditions(BaseModel):
 # Response – top-level
 # ---------------------------------------------------------------------------
 
+
 class WeatherResponse(BaseModel):
-    queryCost: int | None = Field(default=None, description="API cost units consumed by this request.")
-    latitude: float | None = Field(default=None, description="Resolved latitude of the requested location.")
-    longitude: float | None = Field(default=None, description="Resolved longitude of the requested location.")
-    resolvedAddress: str | None = Field(default=None, description="Full address string resolved from the location parameter.")
-    address: str | None = Field(default=None, description="Location as supplied in the request.")
-    timezone: str | None = Field(default=None, description="IANA timezone name (e.g. 'America/New_York').")
+    queryCost: int | None = Field(
+        default=None, description="API cost units consumed by this request."
+    )
+    latitude: float | None = Field(
+        default=None, description="Resolved latitude of the requested location."
+    )
+    longitude: float | None = Field(
+        default=None, description="Resolved longitude of the requested location."
+    )
+    resolvedAddress: str | None = Field(
+        default=None,
+        description="Full address string resolved from the location parameter.",
+    )
+    address: str | None = Field(
+        default=None, description="Location as supplied in the request."
+    )
+    timezone: str | None = Field(
+        default=None, description="IANA timezone name (e.g. 'America/New_York')."
+    )
     tzoffset: float | None = Field(default=None, description="UTC offset in hours.")
-    description: str | None = Field(default=None, description="Text summary of the weather for the requested period.")
+    description: str | None = Field(
+        default=None,
+        description="Text summary of the weather for the requested period.",
+    )
     days: list[DailyWeather] = Field(default=[], description="Daily weather data.")
-    alerts: list[WeatherAlert] = Field(default=[], description="Active weather alerts for the location.")
-    currentConditions: CurrentConditions | None = Field(default=None, description="Real-time observed conditions (included when include=current).")
-    stations: dict[str, WeatherStation] | None = Field(default=None, description="Weather stations contributing to the data, keyed by station ID.")
+    alerts: list[WeatherAlert] = Field(
+        default=[], description="Active weather alerts for the location."
+    )
+    currentConditions: CurrentConditions | None = Field(
+        default=None,
+        description="Real-time observed conditions (included when include=current).",
+    )
+    stations: dict[str, WeatherStation] | None = Field(
+        default=None,
+        description="Weather stations contributing to the data, keyed by station ID.",
+    )
