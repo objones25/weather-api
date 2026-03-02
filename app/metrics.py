@@ -23,3 +23,9 @@ RATE_LIMIT_REJECTIONS_TOTAL = Counter(
     "rate_limit_rejections_total",
     "Total requests rejected by the rate limiter",
 )
+
+CACHE_WARM_TOTAL = Counter(
+    "cache_warm_total",
+    "Background cache refresh attempts by result",
+    ["result"],
+)

@@ -10,10 +10,10 @@ router = APIRouter(
 
 @router.get("/cache", response_model=WeatherResponse)
 async def get_cache(request: WeatherRequest = Depends(), cache_service: CacheService = Depends(get_cache_service)):
-    cached = await cache_service.get(request)
-    if cached is None:
+    result = await cache_service.get(request)
+    if result.value is None:
         raise HTTPException(status_code=404, detail="No cached entry for this request")
-    return WeatherResponse.model_validate_json(cached)
+    return WeatherResponse.model_validate_json(result.value)
 
 @router.post("/cache")
 async def set_cache(response: WeatherResponse, request: Annotated[WeatherRequest, Query()], cache_service: CacheService = Depends(get_cache_service)):

@@ -7,12 +7,13 @@ line of the service class is exercised directly.
 """
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 from httpx import HTTPStatusError, RequestError, Response, Request as HttpxRequest
 from fastapi import HTTPException
 
 from app.weather.service import WeatherService
 from app.weather.schema import WeatherRequest, WeatherResponse, IncludeOption
+from app.cache.service import CacheResult
 from app.config import Settings
 
 
@@ -99,7 +100,9 @@ def test_build_params_with_elements(svc):
 @pytest.mark.anyio
 async def test_get_weather_cache_hit(svc, mock_http, mock_cache):
     """Cache hit: returns the deserialised response; upstream API is never called."""
-    mock_cache.get.return_value = WeatherResponse(address="London").model_dump_json()
+    mock_cache.get.return_value = CacheResult(
+        value=WeatherResponse(address="London").model_dump_json()
+    )
 
     result = await svc.get_weather(WeatherRequest(location="London"))
 
@@ -110,7 +113,7 @@ async def test_get_weather_cache_hit(svc, mock_http, mock_cache):
 @pytest.mark.anyio
 async def test_get_weather_cache_miss_calls_api_and_caches(svc, mock_http, mock_cache):
     """Cache miss: fetches from upstream, stores result, returns parsed response."""
-    mock_cache.get.return_value = None
+    mock_cache.get.return_value = CacheResult(value=None)
     mock_response = MagicMock()
     mock_response.raise_for_status = MagicMock()
     mock_response.json.return_value = {"days": [], "alerts": [], "address": "London"}
@@ -124,6 +127,73 @@ async def test_get_weather_cache_miss_calls_api_and_caches(svc, mock_http, mock_
 
 
 # ---------------------------------------------------------------------------
+# get_weather — cache warming
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_get_weather_triggers_refresh_when_needs_refresh(svc, mock_cache):
+    """needs_refresh=True: returns cached value immediately and fires a background task."""
+    mock_cache.get.return_value = CacheResult(
+        value=WeatherResponse(address="London").model_dump_json(),
+        needs_refresh=True,
+    )
+
+    with patch("asyncio.create_task") as mock_create_task:
+        result = await svc.get_weather(WeatherRequest(location="London"))
+        # Close the captured coroutine — it was never awaited (by design,
+        # create_task is mocked) so without this Python warns at GC time.
+        mock_create_task.call_args.args[0].close()
+
+    assert result.address == "London"
+    mock_create_task.assert_called_once()
+
+
+@pytest.mark.anyio
+async def test_get_weather_no_refresh_when_not_needed(svc, mock_cache):
+    """needs_refresh=False: returns cached value and does NOT fire a background task."""
+    mock_cache.get.return_value = CacheResult(
+        value=WeatherResponse(address="London").model_dump_json(),
+        needs_refresh=False,
+    )
+
+    with patch("asyncio.create_task") as mock_create_task:
+        await svc.get_weather(WeatherRequest(location="London"))
+
+    mock_create_task.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# _refresh_cache
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_refresh_cache_fetches_and_stores(svc, mock_http, mock_cache):
+    """Successful refresh calls upstream API and updates cache."""
+    mock_response = MagicMock()
+    mock_response.raise_for_status = MagicMock()
+    mock_response.json.return_value = {"days": [], "alerts": [], "address": "London"}
+    mock_http.get.return_value = mock_response
+
+    await svc._refresh_cache(WeatherRequest(location="London"))
+
+    mock_http.get.assert_called_once()
+    mock_cache.set.assert_called_once()
+
+
+@pytest.mark.anyio
+async def test_refresh_cache_swallows_errors(svc, mock_http, mock_cache):
+    """Errors in the background refresh are caught and logged — never raised."""
+    mock_http.get.side_effect = RequestError("connection timed out")
+
+    # Should not raise
+    await svc._refresh_cache(WeatherRequest(location="London"))
+
+    mock_cache.set.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
 # get_weather — error paths
 # ---------------------------------------------------------------------------
 
@@ -133,7 +203,7 @@ async def test_get_weather_http_status_error_propagates_status_code(
     svc, mock_http, mock_cache
 ):
     """Upstream 4xx/5xx is re-raised as HTTPException with the same status code."""
-    mock_cache.get.return_value = None
+    mock_cache.get.return_value = CacheResult(value=None)
     httpx_req = HttpxRequest("GET", "https://example.com")
     httpx_resp = Response(502, request=httpx_req)
     mock_response = MagicMock()
@@ -151,7 +221,7 @@ async def test_get_weather_http_status_error_propagates_status_code(
 @pytest.mark.anyio
 async def test_get_weather_request_error_raises_503(svc, mock_http, mock_cache):
     """Network/transport errors are surfaced as 503 Service Unavailable."""
-    mock_cache.get.return_value = None
+    mock_cache.get.return_value = CacheResult(value=None)
     mock_http.get.side_effect = RequestError("connection timed out")
 
     with pytest.raises(HTTPException) as exc_info:

@@ -1,22 +1,25 @@
+import json
 import pytest
 from app.config import get_settings
 from app.weather.schema import WeatherResponse
-import json
+from app.cache.service import CacheResult
 
 settings = get_settings()
 
 
-def test_cache_get(client, mock_cache_service):                                                                      
-      mock_cache_service.get.return_value = json.dumps(WeatherResponse().model_dump(mode="json"))                      
-      response = client.get("/v1/cache?location=London,UK")                                                          
-      assert response.status_code == 200                                                                               
-      data = response.json()
-      assert data["days"] == []
-      assert data["alerts"] == []
-      assert data["queryCost"] is None
+def test_cache_get(client, mock_cache_service):
+    mock_cache_service.get.return_value = CacheResult(
+        value=json.dumps(WeatherResponse().model_dump(mode="json"))
+    )
+    response = client.get("/v1/cache?location=London,UK")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["days"] == []
+    assert data["alerts"] == []
+    assert data["queryCost"] is None
 
 def test_cache_miss(client, mock_cache_service):
-    mock_cache_service.get.return_value = None
+    mock_cache_service.get.return_value = CacheResult(value=None)
     response = client.get("/v1/cache?location=London,UK")
     assert response.status_code == 404
     assert response.json()["detail"] == "No cached entry for this request"
