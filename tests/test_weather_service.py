@@ -12,7 +12,12 @@ from httpx import HTTPStatusError, RequestError, Response, Request as HttpxReque
 from fastapi import HTTPException
 
 from app.weather.service import WeatherService
-from app.weather.schema import WeatherRequest, WeatherResponse, IncludeOption
+from app.weather.schema import (
+    BatchWeatherResponse,
+    WeatherRequest,
+    WeatherResponse,
+    IncludeOption,
+)
 from app.cache.service import CacheResult
 
 
@@ -222,3 +227,98 @@ async def test_get_weather_request_error_raises_503(svc, mock_http, mock_cache):
         await svc.get_weather(WeatherRequest(location="London"))
 
     assert exc_info.value.status_code == 503
+
+
+# ---------------------------------------------------------------------------
+# get_weather_batch
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_get_weather_batch_all_succeed(svc, mock_http, mock_cache):
+    mock_cache.get.return_value = CacheResult(value=None)
+    mock_response = MagicMock()
+    mock_response.raise_for_status = MagicMock()
+    mock_response.json.return_value = {"days": [], "alerts": [], "address": "X"}
+    mock_http.get.return_value = mock_response
+
+    result = await svc.get_weather_batch(
+        [WeatherRequest(location="London"), WeatherRequest(location="Paris")]
+    )
+    assert isinstance(result, BatchWeatherResponse)
+    assert len(result.results) == 2
+    assert all(item.status == "ok" for item in result.results)
+
+
+@pytest.mark.anyio
+async def test_get_weather_batch_partial_failure(svc, mock_http, mock_cache):
+    mock_cache.get.return_value = CacheResult(value=None)
+    ok_resp = MagicMock()
+    ok_resp.raise_for_status = MagicMock()
+    ok_resp.json.return_value = {"days": [], "alerts": [], "address": "London"}
+    fail_resp = MagicMock()
+    httpx_req = HttpxRequest("GET", "https://example.com")
+    fail_resp.raise_for_status.side_effect = HTTPStatusError(
+        "Not found", request=httpx_req, response=Response(404, request=httpx_req)
+    )
+    mock_http.get.side_effect = [ok_resp, fail_resp]
+
+    result = await svc.get_weather_batch(
+        [WeatherRequest(location="London"), WeatherRequest(location="BadCity")]
+    )
+    assert result.results[0].status == "ok"
+    assert result.results[1].status == "error"
+    assert result.results[1].error is not None
+
+
+@pytest.mark.anyio
+async def test_get_weather_batch_all_fail(svc, mock_http, mock_cache):
+    mock_cache.get.return_value = CacheResult(value=None)
+    mock_http.get.side_effect = RequestError("timeout")
+
+    result = await svc.get_weather_batch(
+        [WeatherRequest(location="A"), WeatherRequest(location="B")]
+    )
+    assert all(item.status == "error" for item in result.results)
+
+
+@pytest.mark.anyio
+async def test_get_weather_batch_unexpected_exception_uses_else_branch(
+    svc, mock_http, mock_cache
+):
+    """Non-HTTP, non-network exceptions hit the else branch and return a generic error."""
+    mock_cache.get.return_value = CacheResult(value=None)
+    # ValueError is not caught by get_weather's except clauses, so it propagates
+    # through asyncio.gather(return_exceptions=True) as a raw exception.
+    mock_http.get.side_effect = ValueError("unexpected internal failure")
+
+    result = await svc.get_weather_batch([WeatherRequest(location="London")])
+
+    assert result.results[0].status == "error"
+    assert result.results[0].error == "An unexpected error occurred"
+
+
+@pytest.mark.anyio
+async def test_get_weather_batch_preserves_order(svc, mock_http, mock_cache):
+    mock_cache.get.return_value = CacheResult(value=None)
+
+    def make_resp(addr):
+        r = MagicMock()
+        r.raise_for_status = MagicMock()
+        r.json.return_value = {"days": [], "alerts": [], "address": addr}
+        return r
+
+    mock_http.get.side_effect = [
+        make_resp("London"),
+        make_resp("Paris"),
+        make_resp("Tokyo"),
+    ]
+
+    result = await svc.get_weather_batch(
+        [
+            WeatherRequest(location="London"),
+            WeatherRequest(location="Paris"),
+            WeatherRequest(location="Tokyo"),
+        ]
+    )
+    assert [item.location for item in result.results] == ["London", "Paris", "Tokyo"]

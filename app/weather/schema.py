@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from enum import Enum
+from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -365,3 +366,32 @@ class WeatherResponse(BaseModel):
         default=None,
         description="Weather stations contributing to the data, keyed by station ID.",
     )
+
+
+# ---------------------------------------------------------------------------
+# Batch request / response
+# ---------------------------------------------------------------------------
+
+
+class BatchWeatherRequest(BaseModel):
+    locations: list[WeatherRequest]
+
+    @field_validator("locations")
+    @classmethod
+    def validate_batch_size(cls, v: list[WeatherRequest]) -> list[WeatherRequest]:
+        if len(v) == 0:
+            raise ValueError("locations must contain at least one request")
+        if len(v) > 10:
+            raise ValueError("locations must contain at most 10 requests")
+        return v
+
+
+class BatchWeatherItem(BaseModel):
+    location: str
+    status: Literal["ok", "error"]
+    result: WeatherResponse | None = None
+    error: str | None = None
+
+
+class BatchWeatherResponse(BaseModel):
+    results: list[BatchWeatherItem]

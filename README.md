@@ -252,9 +252,9 @@ Middleware is registered LIFO — `RequestIDMiddleware` runs first (sets `reques
 
 Two parallel jobs run on every push and pull request to `main`:
 
-| Job | What it does |
-|-----|--------------|
-| `lint` | `ruff check .` (imports, unused vars, etc.) + `ruff format --check .` (formatting) |
+| Job    | What it does                                                                         |
+| ------ | ------------------------------------------------------------------------------------ |
+| `lint` | `ruff check .` (imports, unused vars, etc.) + `ruff format --check .` (formatting)   |
 | `test` | Full test suite with `--cov-fail-under=95` — build fails if coverage drops below 95% |
 
 Coverage is also written to the GitHub Actions step summary as a Markdown table.

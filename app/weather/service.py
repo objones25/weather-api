@@ -10,7 +10,12 @@ from fastapi import Depends, HTTPException, Request
 from app.cache.service import CacheService, get_cache_service
 from app.config import Settings, get_settings
 from app.metrics import CACHE_WARM_TOTAL
-from app.weather.schema import WeatherRequest, WeatherResponse
+from app.weather.schema import (
+    BatchWeatherItem,
+    BatchWeatherResponse,
+    WeatherRequest,
+    WeatherResponse,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -109,6 +114,40 @@ class WeatherService:
             raise HTTPException(
                 status_code=503, detail=f"Could not reach weather service: {e}"
             )
+
+    async def get_weather_batch(
+        self, requests: list[WeatherRequest]
+    ) -> BatchWeatherResponse:
+        outcomes = await asyncio.gather(
+            *[self.get_weather(r) for r in requests],
+            return_exceptions=True,
+        )
+        items: list[BatchWeatherItem] = []
+        for req, outcome in zip(requests, outcomes):
+            if isinstance(outcome, WeatherResponse):
+                items.append(
+                    BatchWeatherItem(location=req.location, status="ok", result=outcome)
+                )
+            elif isinstance(outcome, HTTPException):
+                items.append(
+                    BatchWeatherItem(
+                        location=req.location,
+                        status="error",
+                        error=str(outcome.detail),
+                    )
+                )
+            else:
+                logger.error(
+                    "Unexpected error in batch fetch for %s: %s", req.location, outcome
+                )
+                items.append(
+                    BatchWeatherItem(
+                        location=req.location,
+                        status="error",
+                        error="An unexpected error occurred",
+                    )
+                )
+        return BatchWeatherResponse(results=items)
 
     async def _refresh_cache(self, request: WeatherRequest) -> None:
         """Fetch fresh data from upstream and update the cache entry.
