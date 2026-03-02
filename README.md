@@ -150,17 +150,17 @@ Jaeger UI available at [http://localhost:16686](http://localhost:16686)
 
 All endpoints require an `X-API-Key` header except `/metrics`.
 
-| Method   | Path                  | Auth required | Description                                      |
-| -------- | --------------------- | ------------- | ------------------------------------------------ |
-| `GET`    | `/`                   | Yes           | App name, description, version                   |
-| `GET`    | `/health`             | Yes           | Deep health check (Redis + API)                  |
-| `GET`    | `/v1/weather`         | Yes           | Fetch weather for a single location              |
-| `POST`   | `/v1/weather/batch`   | Yes           | Fetch weather for up to 10 locations in parallel |
-| `GET`    | `/v1/cache`           | Yes           | Retrieve a cached response                       |
-| `POST`   | `/v1/cache`           | Yes           | Store a response in cache                        |
-| `DELETE` | `/v1/cache`           | Yes           | Delete a cached response                         |
-| `GET`    | `/v1/history`         | Yes           | List past weather requests                       |
-| `GET`    | `/metrics`            | No            | Prometheus metrics (scrape endpoint)             |
+| Method   | Path                | Auth required | Description                                      |
+| -------- | ------------------- | ------------- | ------------------------------------------------ |
+| `GET`    | `/`                 | Yes           | App name, description, version                   |
+| `GET`    | `/health`           | Yes           | Deep health check (Redis + API)                  |
+| `GET`    | `/v1/weather`       | Yes           | Fetch weather for a single location              |
+| `POST`   | `/v1/weather/batch` | Yes           | Fetch weather for up to 10 locations in parallel |
+| `GET`    | `/v1/cache`         | Yes           | Retrieve a cached response                       |
+| `POST`   | `/v1/cache`         | Yes           | Store a response in cache                        |
+| `DELETE` | `/v1/cache`         | Yes           | Delete a cached response                         |
+| `GET`    | `/v1/history`       | Yes           | List past weather requests                       |
+| `GET`    | `/metrics`          | No            | Prometheus metrics (scrape endpoint)             |
 
 ### Weather endpoint parameters
 
@@ -288,12 +288,14 @@ Middleware is registered LIFO — `RequestIDMiddleware` runs first (sets `reques
 
 ## CI
 
-Two parallel jobs run on every push and pull request to `main`:
+Four parallel jobs run on every push and pull request to `main`:
 
-| Job    | What it does                                                                         |
-| ------ | ------------------------------------------------------------------------------------ |
-| `lint` | `ruff check .` (imports, unused vars, etc.) + `ruff format --check .` (formatting)   |
-| `test` | Full test suite with `--cov-fail-under=95` — build fails if coverage drops below 95% |
+| Job      | What it does                                                                             |
+| -------- | ---------------------------------------------------------------------------------------- |
+| `lint`   | `ruff check .` + `ruff format --check .` + `pip-audit` (scan locked deps for known CVEs) |
+| `mypy`   | `mypy app/` — static type checking across all 23 source files                            |
+| `test`   | Full test suite with `--cov-fail-under=95` — build fails if coverage drops below 95%     |
+| `docker` | `docker build` — validates the Dockerfile and dependency install on every push           |
 
 Coverage is also written to the GitHub Actions step summary as a Markdown table.
 
@@ -302,6 +304,8 @@ To run the same checks locally:
 ```bash
 uv run ruff check .
 uv run ruff format --check .
+uv run pip-audit
+uv run mypy app/
 uv run pytest tests/ --ignore=tests/test_benchmarks.py --cov=app --cov-fail-under=95
 ```
 
