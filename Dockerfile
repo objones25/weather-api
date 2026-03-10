@@ -10,9 +10,8 @@ ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy
 
 # Install dependencies first (cached unless pyproject.toml / uv.lock changes)
+COPY pyproject.toml uv.lock ./
 RUN --mount=type=cache,id=s/00186f69-74f6-4121-92aa-bb2f5b815b71-/root/.cache/uv,target=/root/.cache/uv \
-    --mount=type=bind,source=uv.lock,target=uv.lock \
-    --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
     uv sync --frozen --no-install-project --no-dev
 
 # Copy source and install the project itself
