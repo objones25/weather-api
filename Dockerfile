@@ -24,17 +24,13 @@ FROM python:3.13-slim AS runtime
 
 WORKDIR /app
 
-# Non-root user for security
-RUN useradd --system --create-home appuser && \
-    mkdir -p /data && chown appuser:appuser /data
+RUN mkdir -p /data
 
 # Copy the virtual environment, source, and migration files from the builder
-COPY --from=builder --chown=appuser:appuser /app/.venv /app/.venv
-COPY --from=builder --chown=appuser:appuser /app/app /app/app
-COPY --from=builder --chown=appuser:appuser /app/alembic /app/alembic
-COPY --from=builder --chown=appuser:appuser /app/alembic.ini /app/alembic.ini
-
-USER appuser
+COPY --from=builder /app/.venv /app/.venv
+COPY --from=builder /app/app /app/app
+COPY --from=builder /app/alembic /app/alembic
+COPY --from=builder /app/alembic.ini /app/alembic.ini
 
 # Prepend venv to PATH so `python` and `fastapi` resolve without activation
 ENV PATH="/app/.venv/bin:$PATH" \
