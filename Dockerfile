@@ -25,7 +25,8 @@ FROM python:3.13-slim AS runtime
 WORKDIR /app
 
 # Non-root user for security
-RUN useradd --system --create-home appuser
+RUN useradd --system --create-home appuser && \
+    mkdir -p /data && chown appuser:appuser /data
 
 # Copy the virtual environment, source, and migration files from the builder
 COPY --from=builder --chown=appuser:appuser /app/.venv /app/.venv
